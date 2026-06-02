@@ -76,6 +76,23 @@ const App = (() => {
     const dialog = document.getElementById('share-dialog');
     const userList = document.getElementById('share-user-list');
 
+    // Calculate descendant count
+    let totalDescendant = 0;
+    for (const id of selectedIds) {
+      if (typeof Tree !== 'undefined' && Tree.countDescendants) {
+        totalDescendant += Tree.countDescendants(id);
+      }
+    }
+    const totalNodes = selectedIds.length + totalDescendant;
+
+    dialog.querySelector('.modal-header h3').textContent =
+      totalDescendant > 0 ? `分享 ${totalNodes} 个节点（含 ${totalDescendant} 个子节点）` : `分享 ${selectedIds.length} 篇文章`;
+
+    const recursiveCheckbox = document.getElementById('share-recursive');
+    if (recursiveCheckbox) {
+      recursiveCheckbox.style.display = totalDescendant > 0 ? '' : 'none';
+    }
+
     let html = '';
     for (const u of activeUsers) {
       html += `<label class="user-checkbox"><input type="checkbox" value="${u.id}" data-email="${u.email}" /> ${escapeHtml(u.nickname || u.email)}</label>`;
@@ -104,6 +121,23 @@ const App = (() => {
     const dialog = document.getElementById('batch-dialog');
     const userList = document.getElementById('batch-user-list');
     dialog.querySelector('.batch-dialog-title').textContent = mode === 'grant' ? '批量授权' : '批量撤销';
+
+    // Calculate descendant count
+    let totalDescendant = 0;
+    for (const id of selectedIds) {
+      if (typeof Tree !== 'undefined' && Tree.countDescendants) {
+        totalDescendant += Tree.countDescendants(id);
+      }
+    }
+    const totalNodes = selectedIds.length + totalDescendant;
+    if (totalDescendant > 0) {
+      dialog.querySelector('.batch-dialog-title').textContent += ` ${totalNodes} 个节点（含 ${totalDescendant} 个子节点）`;
+    }
+
+    const recursiveCheckbox = document.getElementById('batch-recursive');
+    if (recursiveCheckbox) {
+      recursiveCheckbox.style.display = totalDescendant > 0 ? '' : 'none';
+    }
 
     let html = '';
     for (const u of activeUsers) {
@@ -138,6 +172,20 @@ const App = (() => {
       select.innerHTML += `<option value="${u.id}">${escapeHtml(u.nickname || u.email)}</option>`;
     }
 
+    // Calculate descendant count for the single selected node
+    let totalDescendant = 0;
+    if (typeof Tree !== 'undefined' && Tree.countDescendants) {
+      totalDescendant = Tree.countDescendants(selectedIds[0]);
+    }
+    const totalNodes = 1 + totalDescendant;
+    dialog.querySelector('.modal-header h3').textContent =
+      totalDescendant > 0 ? `权限转让 ${totalNodes} 个节点（含 ${totalDescendant} 个子节点）` : '权限转让';
+
+    const recursiveCheckbox = document.getElementById('transfer-recursive');
+    if (recursiveCheckbox) {
+      recursiveCheckbox.style.display = totalDescendant > 0 ? '' : 'none';
+    }
+
     dialog.style.display = 'flex';
     dialog.dataset.nodeId = selectedIds[0];
   }
@@ -154,10 +202,11 @@ const App = (() => {
       return;
     }
 
+    const recursive = document.getElementById('share-recursive')?.checked || false;
     const res = await fetch('/api/nodes/batch-authorize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node_ids: nodeIds, user_ids: selectedUsers, is_active: true }),
+      body: JSON.stringify({ node_ids: nodeIds, user_ids: selectedUsers, is_active: true, recursive }),
     });
     if (res.ok) {
       showToast('授权成功', 'success');
@@ -173,13 +222,14 @@ const App = (() => {
     const nodeIds = (dialog.dataset.nodeIds || '').split(',').map(Number);
     const selectedUsers = [...document.querySelectorAll('#batch-user-list input:checked')].map(el => parseInt(el.value));
     const mode = dialog.dataset.mode;
+    const recursive = document.getElementById('batch-recursive')?.checked || false;
 
     if (selectedUsers.length === 0) { showToast('请选择用户', 'error'); return; }
 
     const res = await fetch('/api/nodes/batch-authorize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node_ids: nodeIds, user_ids: selectedUsers, is_active: mode === 'grant' }),
+      body: JSON.stringify({ node_ids: nodeIds, user_ids: selectedUsers, is_active: mode === 'grant', recursive }),
     });
     if (res.ok) {
       showToast(mode === 'grant' ? '授权成功' : '已撤销', 'success');
@@ -194,14 +244,21 @@ const App = (() => {
     const dialog = document.getElementById('transfer-dialog');
     const nodeId = parseInt(dialog.dataset.nodeId);
     const newOwnerId = parseInt(document.getElementById('transfer-user-select').value);
+    const recursive = document.getElementById('transfer-recursive')?.checked || false;
 
     if (!newOwnerId) { showToast('请选择目标用户', 'error'); return; }
-    if (!confirm('确定转让此文章的所有权吗？')) return;
+
+    const totalDescendant = typeof Tree !== 'undefined' && Tree.countDescendants ? Tree.countDescendants(nodeId) : 0;
+    const totalNodes = recursive ? (1 + totalDescendant) : 1;
+    const confirmMsg = recursive
+      ? `确定转让此文章及其所有 ${totalDescendant} 个子节点的所有权吗？共 ${totalNodes} 个节点。`
+      : '确定转让此文章的所有权吗？';
+    if (!confirm(confirmMsg)) return;
 
     const res = await fetch(`/api/nodes/${nodeId}/transfer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ new_owner_id: newOwnerId }),
+      body: JSON.stringify({ new_owner_id: newOwnerId, recursive }),
     });
     if (res.ok) {
       showToast('所有权转让成功', 'success');

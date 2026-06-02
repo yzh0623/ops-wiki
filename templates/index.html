@@ -126,6 +126,9 @@
         <button class="btn-close" onclick="document.getElementById('share-dialog').style.display='none'">&times;</button>
       </div>
       <div id="share-user-list" class="user-checklist"></div>
+      <label style="font-size:13px;padding:8px;display:block" id="share-recursive-label">
+        <input type="checkbox" id="share-recursive" /> 包含所有子节点
+      </label>
       <button id="btn-share-save" class="btn btn-primary btn-full" style="margin-top:12px">保存授权</button>
     </div>
   </div>
@@ -138,6 +141,9 @@
         <button class="btn-close" onclick="document.getElementById('batch-dialog').style.display='none'">&times;</button>
       </div>
       <div id="batch-user-list" class="user-checklist"></div>
+      <label style="font-size:13px;padding:8px;display:block" id="batch-recursive-label">
+        <input type="checkbox" id="batch-recursive" /> 包含所有子节点
+      </label>
       <button id="btn-batch-save" class="btn btn-primary btn-full" style="margin-top:12px">确认</button>
     </div>
   </div>
@@ -151,6 +157,9 @@
       </div>
       <p style="font-size:13px;color:#666;margin-bottom:12px">转让后该文章所有权将转移给目标用户</p>
       <select id="transfer-user-select" style="width:100%;padding:8px;border:1px solid #dcdde1;border-radius:4px"></select>
+      <label style="font-size:13px;padding:8px;display:block" id="transfer-recursive-label">
+        <input type="checkbox" id="transfer-recursive" /> 包含所有子节点
+      </label>
       <button id="btn-transfer-confirm" class="btn btn-primary btn-full" style="margin-top:16px">确认转让</button>
     </div>
   </div>

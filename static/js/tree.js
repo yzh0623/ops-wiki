@@ -159,6 +159,14 @@ const Tree = (() => {
       // Title
       html += `<span class="tree-title">${escapeHtml(node.title)}</span>`;
 
+      // Descendant count indicator
+      if (hasChildren) {
+        const descendantCount = countDescendants(node.id);
+        if (descendantCount > 0) {
+          html += `<span class="tree-descendant-count">(含 ${descendantCount} 个子节点)</span>`;
+        }
+      }
+
       // Operation buttons
       const nodeType = node.type || 'document';
       html += `<span class="node-ops">`;
@@ -188,6 +196,15 @@ const Tree = (() => {
   }
 
   // ─── Search ───
+
+  function countDescendants(nodeId) {
+    let count = 0;
+    const children = allNodes.filter(n => n.parent_id === nodeId);
+    for (const child of children) {
+      count += 1 + countDescendants(child.id);
+    }
+    return count;
+  }
 
   function filterTree(nodes, keyword) {
     const kw = keyword.toLowerCase();
@@ -257,6 +274,14 @@ const Tree = (() => {
       return el && parseInt(el.dataset.owner) === currentUserId;
     });
 
+    // Calculate total nodes including descendants
+    let totalNodeCount = selectedIds.size;
+    let totalDescendantCount = 0;
+    for (const id of selectedIds) {
+      totalDescendantCount += countDescendants(id);
+    }
+    const totalWithDescendants = totalNodeCount + totalDescendantCount;
+
     const batchItem = document.getElementById('ctx-batch-authorize');
     const revokeItem = document.getElementById('ctx-revoke');
     const transferItem = document.getElementById('ctx-transfer');
@@ -264,6 +289,11 @@ const Tree = (() => {
     batchItem.style.display = (hasOwned && selectedIds.size > 0) ? 'block' : 'none';
     revokeItem.style.display = (hasOwned && selectedIds.size > 0) ? 'block' : 'none';
     transferItem.style.display = (hasOwned && selectedIds.size === 1) ? 'block' : 'none';
+
+    const suffix = totalDescendantCount > 0 ? `（含 ${totalDescendantCount} 个子节点）` : '';
+    batchItem.textContent = `批量授权 ${totalWithDescendants} 个节点${suffix}`;
+    revokeItem.textContent = `批量撤销 ${totalWithDescendants} 个节点${suffix}`;
+    transferItem.textContent = `权限转让 ${totalWithDescendants} 个节点${suffix}`;
 
     menu.dataset.nodeId = nodeId;
     menu.dataset.nodeIds = [...selectedIds].join(',');
@@ -397,5 +427,5 @@ const Tree = (() => {
     }, 300);
   });
 
-  return { loadTree, selectNode, getSelectedIds: () => [...selectedIds] };
+  return { loadTree, selectNode, getSelectedIds: () => [...selectedIds], countDescendants };
 })();

@@ -86,8 +86,12 @@ def login():
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
+    from flask import session
+    session.clear()
     logout_user()
-    return jsonify({'message': '已登出'}), 200
+    resp = jsonify({'message': '已登出'})
+    resp.set_cookie('session', '', expires=0, max_age=0)
+    return resp, 200
 
 
 @auth_bp.route('/me', methods=['GET'])

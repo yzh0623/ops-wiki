@@ -6,6 +6,7 @@ from flask_login import login_required, current_user
 from app import db
 from models import Node, User, NodePermission as NodePerm
 from crypto import encrypt_content, decrypt_content
+from email_utils import send_notification
 
 views_bp = Blueprint('views', __name__)
 
@@ -43,6 +44,16 @@ def _build_tree(nodes: list[Node], parent_id: int | None = None) -> list[dict]:
             entry['children'] = children
             result.append(entry)
     return result
+
+
+def _get_subtree_ids(parent_id: int) -> list[int]:
+    """Collect all descendant node IDs recursively."""
+    ids: list[int] = []
+    children = Node.query.filter_by(parent_id=parent_id).all()
+    for child in children:
+        ids.append(child.id)
+        ids.extend(_get_subtree_ids(child.id))
+    return ids
 
 
 @views_bp.route('/nodes', methods=['POST'])
@@ -191,20 +202,56 @@ def share_node(node_id):
 
     data = request.get_json(force=True)
     user_ids = data.get('user_ids', [])
+    recursive = data.get('recursive', False) or request.args.get('recursive') == 'true'
 
     if not user_ids:
         return jsonify({'error': '未提供用户列表'}), 400
 
-    for uid in user_ids:
-        perm = NodePerm(
-            node_id=node.id,
-            grantor_id=current_user.id,
-            grantee_id=uid,
-            is_active=True,
-        )
-        db.session.add(perm)
+    node_ids = [node_id]
+    skipped = 0
+    if recursive:
+        subtree = _get_subtree_ids(node_id)
+        node_ids.extend(subtree)
+
+    count = 0
+    for nid in node_ids:
+        n = Node.query.get(nid)
+        if not n or n.owner_id != current_user.id:
+            skipped += 1
+            continue
+        for uid in user_ids:
+            perm = NodePerm(
+                node_id=nid,
+                grantor_id=current_user.id,
+                grantee_id=uid,
+                is_active=True,
+            )
+            db.session.add(perm)
+            count += 1
     db.session.commit()
-    return jsonify({'message': f'已授权 {len(user_ids)} 名用户'}), 200
+
+    if count > 0:
+        grantor_name = current_user.nickname or current_user.email
+        for uid in user_ids:
+            grantee = User.query.get(uid)
+            if grantee and grantee.email:
+                titles = []
+                for nid in node_ids:
+                    n = Node.query.get(nid)
+                    if n:
+                        titles.append(n.title)
+                body = f'用户 {grantor_name} 已对您进行了以下文章的授权：\n'
+                body += '\n'.join(f'  - {t}' for t in titles[:20])
+                if len(titles) > 20:
+                    body += f'\n  ...等 {len(titles)} 篇文章'
+                body += '\n\n请登录 Ops Wiki 查看。'
+                send_notification(grantee.email, 'Ops Wiki - 权限变更通知', body)
+
+    return jsonify({
+        'message': f'已授权 {count} 项权限' + (f'（跳过 {skipped} 个非自有节点）' if skipped else ''),
+        'count': count,
+        'skipped': skipped,
+    }), 200
 
 
 @views_bp.route('/nodes/batch-authorize', methods=['POST'])
@@ -214,9 +261,16 @@ def batch_authorize():
     node_ids = data.get('node_ids', [])
     user_ids = data.get('user_ids', [])
     is_active = data.get('is_active', True)
+    recursive = data.get('recursive', False)
 
     if not node_ids or not user_ids:
         return jsonify({'error': '未提供节点或用户列表'}), 400
+
+    if recursive:
+        expanded_ids = list(node_ids)
+        for nid in node_ids:
+            expanded_ids.extend(_get_subtree_ids(nid))
+        node_ids = list(dict.fromkeys(expanded_ids))  # deduplicate preserving order
 
     nodes = Node.query.filter(Node.id.in_(node_ids)).all()
     authorized = 0
@@ -233,6 +287,28 @@ def batch_authorize():
             db.session.add(perm)
             authorized += 1
     db.session.commit()
+
+    if authorized > 0:
+        grantor_name = current_user.nickname or current_user.email
+        for uid in user_ids:
+            grantee = User.query.get(uid)
+            if grantee and grantee.email:
+                titles = [n.title for n in nodes if n]
+                if is_active:
+                    body = f'用户 {grantor_name} 已对您进行了以下文章的授权：\n'
+                    body += '\n'.join(f'  - {t}' for t in titles[:20])
+                    if len(titles) > 20:
+                        body += f'\n  ...等 {len(titles)} 篇文章'
+                    subj = 'Ops Wiki - 权限变更通知'
+                else:
+                    body = f'用户 {grantor_name} 已撤销您对以下文章的访问权限：\n'
+                    body += '\n'.join(f'  - {t}' for t in titles[:20])
+                    if len(titles) > 20:
+                        body += f'\n  ...等 {len(titles)} 篇文章'
+                    subj = 'Ops Wiki - 权限撤销通知'
+                body += '\n\n请登录 Ops Wiki 查看。'
+                send_notification(grantee.email, subj, body)
+
     action = '授权' if is_active else '撤销'
     return jsonify({'message': f'已{action} {authorized} 项权限'}), 200
 
@@ -246,6 +322,8 @@ def transfer_node(node_id):
 
     data = request.get_json(force=True)
     new_owner_id = data.get('new_owner_id')
+    recursive = data.get('recursive', False)
+
     if not new_owner_id:
         return jsonify({'error': '未指定新所有者'}), 400
 
@@ -255,23 +333,46 @@ def transfer_node(node_id):
     if not new_owner.is_active:
         return jsonify({'error': '目标用户未激活'}), 400
 
-    plaintext = ''
-    if node.encrypted_key and current_user.rsa_private_key:
-        try:
-            plaintext = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
-        except Exception:
-            plaintext = node.content
-    else:
-        plaintext = node.content
+    node_ids = [node_id]
+    if recursive:
+        node_ids.extend(_get_subtree_ids(node_id))
 
-    if plaintext and new_owner.rsa_public_key:
-        enc_content, enc_key = encrypt_content(plaintext, new_owner.rsa_public_key)
-        node.content = enc_content
-        node.encrypted_key = enc_key
+    transferred = 0
+    for nid in node_ids:
+        n = Node.query.get(nid)
+        if not n or n.owner_id != current_user.id:
+            continue
 
-    node.owner_id = new_owner_id
+        plaintext = ''
+        if n.encrypted_key and current_user.rsa_private_key:
+            try:
+                plaintext = decrypt_content(n.content, n.encrypted_key, current_user.rsa_private_key)
+            except Exception:
+                plaintext = n.content
+        else:
+            plaintext = n.content
+
+        if plaintext and new_owner.rsa_public_key:
+            enc_content, enc_key = encrypt_content(plaintext, new_owner.rsa_public_key)
+            n.content = enc_content
+            n.encrypted_key = enc_key
+
+        n.owner_id = new_owner_id
+        transferred += 1
+
     db.session.commit()
-    return jsonify({'message': '所有权转让成功'}), 200
+
+    if transferred > 0:
+        grantor_name = current_user.nickname or current_user.email
+        titles = [Node.query.get(nid).title for nid in node_ids if Node.query.get(nid)]
+        body = f'用户 {grantor_name} 已将以下文章的所有权转让给您：\n'
+        body += '\n'.join(f'  - {t}' for t in titles[:20])
+        if len(titles) > 20:
+            body += f'\n  ...等 {len(titles)} 篇文章'
+        body += '\n\n请登录 Ops Wiki 查看。'
+        send_notification(new_owner.email, 'Ops Wiki - 所有权转让通知', body)
+
+    return jsonify({'message': f'已转让 {transferred} 个节点'}), 200
 
 
 ALLOWED_EXTENSIONS = {'.md'}
