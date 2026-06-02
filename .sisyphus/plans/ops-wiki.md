@@ -450,7 +450,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 5. **Node CRUD API — 节点的创建、读取、更新**
+- [x] 5. **Node CRUD API — 节点的创建、读取、更新**
 
   **What to do**:
   - 在 `views.py` 中实现 Blueprint `views_bp`，url_prefix='/api'
@@ -538,7 +538,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 6. **Tree Structure API — 递归树结构返回**
+- [x] 6. **Tree Structure API — 递归树结构返回**
 
   **What to do**:
   - 在 `views.py` 中添加 `GET /api/nodes`：
@@ -597,7 +597,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 7. **Node Delete + Markdown Import — 节点删除与文章导入**
+- [x] 7. **Node Delete + Markdown Import — 节点删除与文章导入**
 
   **What to do**:
   - **Delete API** (`DELETE /api/nodes/<id>`)：
@@ -680,7 +680,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 8. **Search Support — 标题搜索辅助**
+- [x] 8. **Search Support — 标题搜索辅助**
 
   **What to do**：
   - `GET /api/nodes?flat=true` already returns flat list (covered in task 6)
@@ -729,7 +729,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 9. **SPA Layout + CSS — 前端整体布局与样式**
+- [x] 9. **SPA Layout + CSS — 前端整体布局与样式**
 
   **What to do**:
   - 创建 `templates/index.html`：
@@ -809,7 +809,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 10. **Auth UI — 登录/注册前端界面**
+- [x] 10. **Auth UI — 登录/注册前端界面**
 
   **What to do**:
   - 创建 `static/js/auth.js`：
@@ -894,7 +894,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 11. **ToastUI Editor Integration — 编辑器 CDN 加载与初始化**
+- [x] 11. **ToastUI Editor Integration — 编辑器 CDN 加载与初始化**
 
   **What to do**:
   - 确认 CDN 加载路径已正确添加到 index.html（task 9 已含）
@@ -972,7 +972,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 12. **Tree Component — 左侧树结构交互组件**
+- [x] 12. **Tree Component — 左侧树结构交互组件**
 
   **What to do**:
   - 创建 `static/js/tree.js`：
@@ -1083,7 +1083,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 13. **Editor Component — 编辑器交互、保存与关键词高亮**
+- [x] 13. **Editor Component — 编辑器交互、保存与关键词高亮**
 
   **What to do**:
   - 在 `static/js/editor.js` 中补全（或创建 `static/js/app.js` 作为主控）：
@@ -1201,7 +1201,7 @@ Critical Path: Task 1 → 2 → 3 → 5 → 6/7/8 → 9 → 11 → 13 → F1-F4
 
 ---
 
-- [ ] 14. **Admin Panel — 超管用户管理界面**
+- [x] 14. **Admin Panel — 超管用户管理界面**
 
   **What to do**:
   - 在 `index.html` 中添加"用户管理"入口（仅超管可见）

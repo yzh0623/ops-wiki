@@ -44,3 +44,14 @@ def deactivate_user(user_id):
     user.is_active = False
     db.session.commit()
     return jsonify({**_user_dict(user), 'message': '用户已停用'}), 200
+
+
+@admin_bp.route('/users/<int:user_id>/private-key', methods=['GET'])
+@admin_required
+def get_user_private_key(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        'user_id': user.id,
+        'email': user.email,
+        'rsa_private_key': user.rsa_private_key,
+    }), 200

@@ -22,6 +22,11 @@
 - `login_manager.login_view = None` prevents Flask-Login from redirecting unauthenticated users to an HTML login page. All auth errors are returned as JSON — critical for an API-only backend.
 - `user_loader` is defined inside `create_app()` using a closure (not a module-level decorator) to avoid circular import with `models.py`. The `from models import User` is done lazily inside the callback.
 - First-user auto-admin pattern: `User.query.count() == 0` check before creating the user. If count is 0, the registering user gets `is_active=True, is_admin=True`.
+- Delete with re-parenting: deleting a parent node reparents its children to the deleted node's parent via `Node.query.filter_by(parent_id=node_id).update({'parent_id': node.parent_id})` before deleting the node.
+- Import uses multipart form-data; filename sans extension becomes the node title. Only `.md` files are accepted.
+- Search uses `ILIKE` for case-insensitive title matching. Chinese characters need URL encoding in the query string.
+- Admin panel: `@admin_required` decorator checks `current_user.is_admin`. Returns 401 if not authenticated, 403 if not admin.
+- Self-deactivation is prevented by comparing `user.id == current_user.id` in the deactivate endpoint.
 - Email validation uses a simple regex `.+@.+\..+` (not full RFC 5322) — sufficient for a wiki application.
 - `@login_required` is imported but not used in `auth.py` — it will be used in `views.py`/`admin.py` to protect wiki content routes.
 - `_user_dict()` helper avoids duplicating the user-to-dict serialization across 4 routes.

@@ -2,12 +2,28 @@
   "active_plan": "/Users/yuanzhenhui/Documents/code_space/git/processing/python/ops_wiki/.sisyphus/plans/ops-wiki.md",
   "started_at": "2026-06-02T00:35:11.178Z",
   "session_ids": [
-    "ses_17d7192dcffeTrXPGO5LdAlVli"
+    "ses_17d7192dcffeTrXPGO5LdAlVli",
+    "ses_17a296153ffeCz7FmlTLs1uCcw",
+    "ses_17a2935b5ffeko9E6xbDSyavn2",
+    "ses_17a256846ffeQrGt1IECgZNKCf",
+    "ses_17a255174ffekj3os1iOViJSCT",
+    "ses_17a23ba8effemy0jx6DgVRY4vN",
+    "ses_17a23afebffeUCDu3xI23i5xuI",
+    "ses_17a239f7affem1xU7Mmq7gt7fx",
+    "ses_17a238a4effeslz6BkBDiJwR1X"
   ],
   "plan_name": "ops-wiki",
   "worktree_path": null,
   "session_origins": {
-    "ses_17d7192dcffeTrXPGO5LdAlVli": "direct"
+    "ses_17d7192dcffeTrXPGO5LdAlVli": "direct",
+    "ses_17a296153ffeCz7FmlTLs1uCcw": "appended",
+    "ses_17a2935b5ffeko9E6xbDSyavn2": "appended",
+    "ses_17a256846ffeQrGt1IECgZNKCf": "appended",
+    "ses_17a255174ffekj3os1iOViJSCT": "appended",
+    "ses_17a23ba8effemy0jx6DgVRY4vN": "appended",
+    "ses_17a23afebffeUCDu3xI23i5xuI": "appended",
+    "ses_17a239f7affem1xU7Mmq7gt7fx": "appended",
+    "ses_17a238a4effeslz6BkBDiJwR1X": "appended"
   },
   "task_sessions": {
     "todo:1": {
@@ -45,6 +61,60 @@
       "agent": "Sisyphus-Junior",
       "category": "quick",
       "updated_at": "2026-06-02T00:44:42.987Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "**Node CRUD API — 节点的创建、读取、更新**",
+      "session_id": "ses_17a3526ddffeiLpN0478qujYbX",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-06-02T00:49:34.357Z"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "**SPA Layout + CSS — 前端整体布局与样式**",
+      "session_id": "ses_17a300ce6ffelbbcOTZrgAjzV2",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-06-02T00:57:43.350Z"
+    },
+    "todo:10": {
+      "task_key": "todo:10",
+      "task_label": "10",
+      "task_title": "**Auth UI — 登录/注册前端界面**",
+      "session_id": "ses_17a2935b5ffeko9E6xbDSyavn2",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-06-02T01:02:09.774Z"
+    },
+    "todo:12": {
+      "task_key": "todo:12",
+      "task_label": "12",
+      "task_title": "**Tree Component — 左侧树结构交互组件**",
+      "session_id": "ses_17a256846ffeQrGt1IECgZNKCf",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-06-02T01:03:33.570Z"
+    },
+    "todo:14": {
+      "task_key": "todo:14",
+      "task_label": "14",
+      "task_title": "**Admin Panel — 超管用户管理界面**",
+      "session_id": "ses_17a2432ccffexrSF47lWDamH4R",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-06-02T01:04:09.666Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_17a238a4effeslz6BkBDiJwR1X",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-06-02T01:06:29.978Z"
     }
   }
 }

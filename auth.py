@@ -7,6 +7,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 
 from app import db
 from models import User
+from crypto import generate_key_pair
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -50,6 +51,11 @@ def register():
     user.set_password(password)
     user.is_active = True if is_first_user else False
     user.is_admin = True if is_first_user else False
+
+    # Generate RSA key pair for this user
+    private_pem, public_pem = generate_key_pair()
+    user.rsa_public_key = public_pem
+    user.rsa_private_key = private_pem
 
     db.session.add(user)
     db.session.commit()

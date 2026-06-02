@@ -1,4 +1,4 @@
-/* Ops Wiki — Tree sidebar component (render, CRUD, search) */
+/* Ops Wiki — Tree sidebar component (render, CRUD, search, permission multi-select) */
 
 const Tree = (() => {
   let allNodes = [];       // Flat list for search
@@ -6,6 +6,11 @@ const Tree = (() => {
   let selectedId = null;
   let searchKeyword = '';
   let currentDepth = 0;
+
+  // Multi-select state
+  let selectedIds = new Set();  // Set of selected node IDs
+  let lastClickedId = null;
+  let currentUserId = null;
 
   const TREE_CONTAINER = document.getElementById('tree-container');
   const SEARCH_INPUT = document.getElementById('search-tree');
@@ -69,7 +74,29 @@ const Tree = (() => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = parseInt(el.dataset.id);
-        selectNode(id);
+        selectNode(id, e);
+      });
+    });
+
+    // Checkbox clicks
+    TREE_CONTAINER.querySelectorAll('.tree-checkbox').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseInt(el.dataset.id);
+        if (el.checked) {
+          selectedIds.add(id);
+        } else {
+          selectedIds.delete(id);
+        }
+        renderTree();
+        updateToolbarButtons();
+      });
+    });
+
+    // Right-click context menu on tree items
+    TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
+      el.addEventListener('contextmenu', (e) => {
+        showContextMenu(e, parseInt(el.dataset.id));
       });
     });
 
@@ -97,17 +124,24 @@ const Tree = (() => {
         importMarkdown(id);
       });
     });
+
+    // Update toolbar after render
+    updateToolbarButtons();
   }
 
   function renderNodes(nodes, depth) {
     let html = '<ul class="tree-list" style="padding-left:0">';
     for (const node of nodes) {
       const hasChildren = node.children && node.children.length > 0;
-      const isSelected = node.id === selectedId;
+      const isSelected = selectedIds.has(node.id);
       const paddingLeft = 8 + depth * 20;
+      const canSelect = currentUserId === node.owner_id;
+      const checked = canSelect && isSelected ? 'checked' : '';
+      const disabled = !canSelect ? 'disabled' : '';
+      const ownerIcon = node.owner_id === currentUserId ? '\u{1F512}' : '\u{1F465}'; // 🔒 or 👥
 
-      html += `<li class="tree-item ${isSelected ? 'selected' : ''}" data-id="${node.id}">`;
-      html += `<div class="tree-item-content" data-id="${node.id}" style="padding-left:${paddingLeft}px">`;
+      html += `<li class="tree-item ${isSelected ? 'selected' : ''}" data-id="${node.id}" data-owner="${node.owner_id || ''}">`;
+      html += `<div class="tree-item-content" data-id="${node.id}" data-owner="${node.owner_id || ''}" style="padding-left:${paddingLeft}px">`;
 
       // Expand/collapse toggle
       if (hasChildren) {
@@ -115,6 +149,12 @@ const Tree = (() => {
       } else {
         html += `<span class="tree-toggle" style="visibility:hidden">&#9660;</span>`;
       }
+
+      // Checkbox (only own nodes are selectable)
+      html += `<input type="checkbox" class="tree-checkbox" data-id="${node.id}" ${checked} ${disabled} />`;
+
+      // Owner icon
+      html += `<span class="tree-icon">${ownerIcon}</span>`;
 
       // Title
       html += `<span class="tree-title">${escapeHtml(node.title)}</span>`;
@@ -164,20 +204,88 @@ const Tree = (() => {
 
   // ─── Selection ───
 
-  async function selectNode(id) {
-    selectedId = id;
-    renderTree();
-
-    // Fetch node content for editor
-    try {
-      const res = await fetch(`/api/nodes/${id}`);
-      const node = await res.json();
-      if (typeof WikiEditor !== 'undefined') {
-        WikiEditor.loadContent(id, node.content || '');
+  async function selectNode(id, event) {
+    if (event && (event.ctrlKey || event.metaKey)) {
+      // Ctrl+click: toggle selection
+      if (selectedIds.has(id)) {
+        selectedIds.delete(id);
+      } else {
+        selectedIds.add(id);
       }
-    } catch (e) {
-      showToast('加载节点内容失败', 'error');
+    } else {
+      // Single click: clear previous selection
+      selectedIds.clear();
+      selectedIds.add(id);
+      selectedId = id;
+
+      // Fetch node content for editor
+      try {
+        const res = await fetch(`/api/nodes/${id}`);
+        const node = await res.json();
+        if (node.content === null && node.owner_id && node.owner_id !== (typeof Auth !== 'undefined' ? Auth.getUser()?.id : null)) {
+          showToast('你没有权限查看此文章的内容', 'error');
+        }
+        if (typeof WikiEditor !== 'undefined') {
+          WikiEditor.loadContent(id, node.content || '');
+        }
+      } catch (e) {
+        showToast('加载节点内容失败', 'error');
+      }
     }
+    lastClickedId = id;
+    renderTree();
+  }
+
+  // ─── Context Menu ───
+
+  function showContextMenu(e, nodeId) {
+    e.preventDefault();
+
+    // If right-clicked node is not in selection, temporarily treat it as sole selection
+    if (!selectedIds.has(nodeId)) {
+      // Don't change selection — context menu acts on current selection only
+    }
+
+    const menu = document.getElementById('context-menu');
+    menu.style.display = 'block';
+    menu.style.left = e.pageX + 'px';
+    menu.style.top = e.pageY + 'px';
+
+    // Only enable "批量授权" / "批量撤销" / "权限转让" if at least one owned node is selected
+    const hasOwned = [...selectedIds].some(id => {
+      const el = document.querySelector(`.tree-item[data-id="${id}"]`);
+      return el && parseInt(el.dataset.owner) === currentUserId;
+    });
+
+    const batchItem = document.getElementById('ctx-batch-authorize');
+    const revokeItem = document.getElementById('ctx-revoke');
+    const transferItem = document.getElementById('ctx-transfer');
+
+    batchItem.style.display = (hasOwned && selectedIds.size > 0) ? 'block' : 'none';
+    revokeItem.style.display = (hasOwned && selectedIds.size > 0) ? 'block' : 'none';
+    transferItem.style.display = (hasOwned && selectedIds.size === 1) ? 'block' : 'none';
+
+    menu.dataset.nodeId = nodeId;
+    menu.dataset.nodeIds = [...selectedIds].join(',');
+  }
+
+  // Hide context menu on click elsewhere
+  document.addEventListener('click', () => {
+    const menu = document.getElementById('context-menu');
+    if (menu) menu.style.display = 'none';
+  });
+
+  // ─── Toolbar Buttons ───
+
+  function updateToolbarButtons() {
+    const shareBtn = document.getElementById('btn-share');
+    if (!shareBtn) return;
+    const hasOwnedSelected = [...selectedIds].some(id => {
+      const el = document.querySelector(`.tree-item[data-id="${id}"]`);
+      return el && parseInt(el.dataset.owner) === currentUserId;
+    });
+    const currentUser = typeof Auth !== 'undefined' ? Auth.getUser() : null;
+    shareBtn.style.display = (hasOwnedSelected && currentUser) ? 'inline-block' : 'none';
   }
 
   // ─── CRUD Operations ───
@@ -218,6 +326,7 @@ const Tree = (() => {
         selectedId = null;
         if (typeof WikiEditor !== 'undefined') WikiEditor.showPlaceholder();
       }
+      selectedIds.delete(id);
       await loadTree();
       showToast('节点已删除', 'success');
     } catch (e) {
@@ -261,6 +370,16 @@ const Tree = (() => {
     try {
       treeData = await fetchTree();
       allNodes = await fetchFlat();
+
+      // Fetch current user ID
+      try {
+        const userRes = await fetch('/api/auth/me');
+        if (userRes.ok) {
+          const user = await userRes.json();
+          currentUserId = user.id;
+        }
+      } catch (_) {}
+
       renderTree();
     } catch (e) {
       TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">加载失败，请刷新页面</div>';
@@ -278,5 +397,5 @@ const Tree = (() => {
     }, 300);
   });
 
-  return { loadTree, selectNode };
+  return { loadTree, selectNode, getSelectedIds: () => [...selectedIds] };
 })();

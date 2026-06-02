@@ -1,10 +1,11 @@
 """Ops Wiki — wiki node API blueprint (CRUD, tree, import, search)."""
 
 from flask import Blueprint, request, jsonify
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from app import db
-from models import Node
+from models import Node, User, NodePermission as NodePerm
+from crypto import encrypt_content, decrypt_content
 
 views_bp = Blueprint('views', __name__)
 
@@ -25,6 +26,7 @@ def _node_dict(node: Node) -> dict:
         'parent_id': node.parent_id,
         'title': node.title,
         'type': node.type,
+        'owner_id': node.owner_id,
         'sort_order': node.sort_order,
         'created_at': node.created_at.isoformat() if node.created_at else None,
         'updated_at': node.updated_at.isoformat() if node.updated_at else None,
@@ -67,9 +69,30 @@ def create_node():
     ).scalar() or 0
 
     node = Node(title=title, parent_id=parent_id, type=type_, sort_order=max_order + 1)
+    node.owner_id = current_user.id
+
+    content = data.get('content', '')
+    node.content = content
+
+    if type_ == 'article' and content:
+        enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
+        node.content = enc_content
+        node.encrypted_key = enc_key
+
     db.session.add(node)
     db.session.commit()
     return jsonify(_node_dict(node)), 201
+
+
+def _can_access(node: Node, user: User) -> bool:
+    if node.owner_id is None:
+        return True
+    if node.owner_id == user.id:
+        return True
+    perm = NodePerm.query.filter_by(
+        node_id=node.id, grantee_id=user.id
+    ).order_by(NodePerm.created_at.desc()).first()
+    return perm is not None and perm.is_active
 
 
 @views_bp.route('/nodes/<int:node_id>', methods=['GET'])
@@ -77,7 +100,23 @@ def create_node():
 def get_node(node_id):
     node = Node.query.get_or_404(node_id)
     data = _node_dict(node)
-    data['content'] = node.content
+
+    if not _can_access(node, current_user):
+        data['content'] = None
+        data['owner_id'] = node.owner_id
+        return jsonify(data), 200
+
+    if node.encrypted_key:
+        try:
+            owner = User.query.get(node.owner_id) if node.owner_id else current_user
+            plaintext = decrypt_content(node.content, node.encrypted_key, owner.rsa_private_key)
+            data['content'] = plaintext
+        except Exception:
+            data['content'] = '(decryption failed)'
+    else:
+        data['content'] = node.content
+
+    data['owner_id'] = node.owner_id
     return jsonify(data), 200
 
 
@@ -93,11 +132,23 @@ def update_node(node_id):
             return jsonify({'error': '标题不能为空'}), 400
         node.title = title
     if 'content' in data:
-        node.content = data['content'] or ''
+        plaintext = data['content'] or ''
+        if node.type == 'article' and plaintext and current_user.rsa_public_key:
+            enc_content, enc_key = encrypt_content(plaintext, current_user.rsa_public_key)
+            node.content = enc_content
+            node.encrypted_key = enc_key
+        else:
+            node.content = plaintext
 
     db.session.commit()
     result = _node_dict(node)
-    result['content'] = node.content
+    if node.encrypted_key:
+        try:
+            result['content'] = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
+        except Exception:
+            result['content'] = node.content
+    else:
+        result['content'] = node.content
     return jsonify(result), 200
 
 
@@ -129,6 +180,98 @@ def delete_node(node_id):
     return jsonify({
         'message': f'节点已删除，{child_count} 个子节点已上移'
     }), 200
+
+
+@views_bp.route('/nodes/<int:node_id>/share', methods=['POST'])
+@login_required
+def share_node(node_id):
+    node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '只有文章所有者才能分享'}), 403
+
+    data = request.get_json(force=True)
+    user_ids = data.get('user_ids', [])
+
+    if not user_ids:
+        return jsonify({'error': '未提供用户列表'}), 400
+
+    for uid in user_ids:
+        perm = NodePerm(
+            node_id=node.id,
+            grantor_id=current_user.id,
+            grantee_id=uid,
+            is_active=True,
+        )
+        db.session.add(perm)
+    db.session.commit()
+    return jsonify({'message': f'已授权 {len(user_ids)} 名用户'}), 200
+
+
+@views_bp.route('/nodes/batch-authorize', methods=['POST'])
+@login_required
+def batch_authorize():
+    data = request.get_json(force=True)
+    node_ids = data.get('node_ids', [])
+    user_ids = data.get('user_ids', [])
+    is_active = data.get('is_active', True)
+
+    if not node_ids or not user_ids:
+        return jsonify({'error': '未提供节点或用户列表'}), 400
+
+    nodes = Node.query.filter(Node.id.in_(node_ids)).all()
+    authorized = 0
+    for node in nodes:
+        if node.owner_id != current_user.id:
+            continue
+        for uid in user_ids:
+            perm = NodePerm(
+                node_id=node.id,
+                grantor_id=current_user.id,
+                grantee_id=uid,
+                is_active=is_active,
+            )
+            db.session.add(perm)
+            authorized += 1
+    db.session.commit()
+    action = '授权' if is_active else '撤销'
+    return jsonify({'message': f'已{action} {authorized} 项权限'}), 200
+
+
+@views_bp.route('/nodes/<int:node_id>/transfer', methods=['POST'])
+@login_required
+def transfer_node(node_id):
+    node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '只有文章所有者才能转让'}), 403
+
+    data = request.get_json(force=True)
+    new_owner_id = data.get('new_owner_id')
+    if not new_owner_id:
+        return jsonify({'error': '未指定新所有者'}), 400
+
+    new_owner = User.query.get(new_owner_id)
+    if not new_owner:
+        return jsonify({'error': '目标用户不存在'}), 404
+    if not new_owner.is_active:
+        return jsonify({'error': '目标用户未激活'}), 400
+
+    plaintext = ''
+    if node.encrypted_key and current_user.rsa_private_key:
+        try:
+            plaintext = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
+        except Exception:
+            plaintext = node.content
+    else:
+        plaintext = node.content
+
+    if plaintext and new_owner.rsa_public_key:
+        enc_content, enc_key = encrypt_content(plaintext, new_owner.rsa_public_key)
+        node.content = enc_content
+        node.encrypted_key = enc_key
+
+    node.owner_id = new_owner_id
+    db.session.commit()
+    return jsonify({'message': '所有权转让成功'}), 200
 
 
 ALLOWED_EXTENSIONS = {'.md'}
