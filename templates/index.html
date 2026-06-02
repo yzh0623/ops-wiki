@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ops Wiki</title>
+  <!-- ToastUI Editor CDN CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@toast-ui/editor@3.2.2/dist/toastui-editor.css">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <h1 class="topbar-title">Ops Wiki</h1>
+    </div>
+    <div class="topbar-right">
+      <span id="user-info" class="user-info"></span>
+      <button id="btn-admin" class="btn btn-sm btn-admin" style="display:none">用户管理</button>
+      <button id="btn-logout" class="btn btn-sm btn-logout" style="display:none">登出</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div id="main-container">
+    <!-- Left Sidebar -->
+    <aside id="sidebar">
+      <div id="sidebar-search">
+        <input type="text" id="search-tree" placeholder="搜索文档标题..." />
+      </div>
+      <div id="tree-container">
+        <div class="tree-placeholder">暂无文档</div>
+      </div>
+    </aside>
+
+    <!-- Right Editor Area -->
+    <main id="editor-area">
+      <!-- Toolbar Row -->
+      <div id="toolbar">
+        <div class="toolbar-left">
+          <button id="btn-markdown" class="btn btn-active">Markdown</button>
+          <button id="btn-html" class="btn">HTML</button>
+        </div>
+        <div class="toolbar-center">
+          <input type="text" id="highlight-input" placeholder="高亮关键词..." />
+        </div>
+        <div class="toolbar-right">
+          <button id="btn-save" class="btn btn-save" disabled>保存</button>
+          <span id="save-status" class="save-status"></span>
+        </div>
+      </div>
+
+      <!-- Editor Container -->
+      <div id="editor-container">
+        <div id="editor-placeholder" class="editor-placeholder">
+          <p>选择一个节点进行编辑</p>
+        </div>
+        <div id="editor" style="display:none; height: 100%;"></div>
+        <div id="html-preview" style="display:none; height: 100%; overflow-y: auto; padding: 20px;"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Auth Overlay -->
+  <div id="auth-overlay" class="overlay">
+    <div class="modal" id="login-modal">
+      <h2>登录</h2>
+      <form id="login-form">
+        <input type="email" id="login-email" placeholder="邮箱" required />
+        <input type="password" id="login-password" placeholder="密码" required />
+        <button type="submit" class="btn btn-primary btn-full">登录</button>
+        <p class="auth-error" id="login-error"></p>
+        <p class="auth-switch">没有账号？<a href="#" id="show-register">注册账号</a></p>
+      </form>
+    </div>
+    <div class="modal" id="register-modal" style="display:none">
+      <h2>注册</h2>
+      <form id="register-form">
+        <input type="email" id="reg-email" placeholder="邮箱" required />
+        <input type="password" id="reg-password" placeholder="密码（至少6位）" required />
+        <input type="text" id="reg-nickname" placeholder="昵称" />
+        <button type="submit" class="btn btn-primary btn-full">注册</button>
+        <p class="auth-error" id="register-error"></p>
+        <p class="auth-switch">已有账号？<a href="#" id="show-login">返回登录</a></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+  <div id="admin-overlay" class="overlay" style="display:none">
+    <div class="modal modal-wide" id="admin-modal">
+      <div class="modal-header">
+        <h2>用户管理</h2>
+        <button id="btn-close-admin" class="btn-close">&times;</button>
+      </div>
+      <div id="admin-user-list"></div>
+    </div>
+  </div>
+
+  <!-- Loading Toast -->
+  <div id="toast" class="toast" style="display:none"></div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@toast-ui/editor@3.2.2/dist/toastui-editor.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@toast-ui/editor@3.2.2/dist/i18n/zh-cn.js"></script>
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/editor.js"></script>
+  <script src="/static/js/tree.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

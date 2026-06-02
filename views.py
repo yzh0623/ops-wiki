@@ -9,6 +9,16 @@ from models import Node
 views_bp = Blueprint('views', __name__)
 
 
+@views_bp.record_once
+def _register_root_route(state):
+    """Register the SPA root route directly on the Flask app."""
+    from flask import render_template
+
+    @state.app.route('/')
+    def spa_index():
+        return render_template('index.html')
+
+
 def _node_dict(node: Node) -> dict:
     return {
         'id': node.id,
