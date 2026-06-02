@@ -1,0 +1,5 @@
+wiki.sqlite
+__pycache__/
+*.pyc
+.env
+.sisyphus/evidence/
