@@ -1,130 +1,227 @@
-/* Ops Wiki — ToastUI Editor wrapper (init, modes, get/set content) */
+/* Ops Wiki — Split editor: Markdown textarea + HTML preview (marked.js) with draggable divider & snap */
 
 const WikiEditor = (() => {
-  let editor = null;
-  let editorFailed = false;
-  let currentMode = 'markdown'; // 'markdown' | 'html' | 'placeholder'
   let currentNodeId = null;
   let isDirty = false;
+  let isOwner = false;
   let contentBackup = '';
 
-  const EDITOR_CONTAINER = document.getElementById('editor');
+  const MARKDOWN_EDITOR = document.getElementById('markdown-editor');
   const HTML_PREVIEW = document.getElementById('html-preview');
   const PLACEHOLDER = document.getElementById('editor-placeholder');
-  const BTN_MD = document.getElementById('btn-markdown');
-  const BTN_HTML = document.getElementById('btn-html');
+  const SPLIT_EDITOR = document.getElementById('split-editor');
+  const MARKDOWN_PANE = document.getElementById('markdown-pane');
+  const HTML_PANE = document.getElementById('html-pane');
+  const DIVIDER = document.getElementById('split-divider');
   const BTN_SAVE = document.getElementById('btn-save');
   const SAVE_STATUS = document.getElementById('save-status');
+  const READONLY_BADGE = document.getElementById('readonly-badge');
   const HIGHLIGHT_INPUT = document.getElementById('highlight-input');
+  const HIGHLIGHT_WRAPPER = document.querySelector('.highlight-wrapper');
+  const SHARE_BAR = document.getElementById('share-bar');
 
-  function createFallback() {
-    if (document.getElementById('fallback-editor')) return;
-    EDITOR_CONTAINER.innerHTML = '<textarea id="fallback-editor" style="width:100%;height:100%;padding:16px;font-family:monospace;font-size:14px;border:none;resize:none;outline:none"></textarea>';
-    EDITOR_CONTAINER.style.display = 'block';
-    PLACEHOLDER.style.display = 'none';
+  // ─── Divider Drag & Snap ───
+  let isDragging = false;
+  let isSnappedLeft = false;  // markdown pane collapsed (HTML full)
+  let isSnappedRight = false; // html pane collapsed (Markdown full)
+  const SNAP_THRESHOLD = 20;  // pixels from edge to trigger snap
+  let splitRatio = 0.5;       // default 50/50
+
+  function applySplit() {
+    if (isSnappedLeft) {
+      MARKDOWN_PANE.style.flex = '0 0 0px';
+      MARKDOWN_PANE.style.overflow = 'hidden';
+      HTML_PANE.style.flex = '1 1 auto';
+      HTML_PANE.style.overflow = '';
+      DIVIDER.style.cursor = 'e-resize';
+    } else if (isSnappedRight) {
+      MARKDOWN_PANE.style.flex = '1 1 auto';
+      MARKDOWN_PANE.style.overflow = '';
+      HTML_PANE.style.flex = '0 0 0px';
+      HTML_PANE.style.overflow = 'hidden';
+      DIVIDER.style.cursor = 'w-resize';
+    } else {
+      MARKDOWN_PANE.style.flex = `0 0 ${splitRatio * 100}%`;
+      MARKDOWN_PANE.style.overflow = '';
+      HTML_PANE.style.flex = `0 0 ${(1 - splitRatio) * 100}%`;
+      HTML_PANE.style.overflow = '';
+      DIVIDER.style.cursor = 'col-resize';
+    }
   }
 
+  function initDividerDrag() {
+    DIVIDER.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isDragging = true;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      const overlay = document.createElement('div');
+      overlay.id = 'drag-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;cursor:col-resize;';
+      document.body.appendChild(overlay);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const containerRect = SPLIT_EDITOR.getBoundingClientRect();
+      const x = e.clientX - containerRect.left;
+      const w = containerRect.width;
+      let ratio = x / w;
+
+      if (ratio < SNAP_THRESHOLD / w) {
+        isSnappedLeft = true;
+        isSnappedRight = false;
+        splitRatio = 0;
+      } else if (ratio > 1 - SNAP_THRESHOLD / w) {
+        isSnappedLeft = false;
+        isSnappedRight = true;
+        splitRatio = 1;
+      } else {
+        isSnappedLeft = false;
+        isSnappedRight = false;
+        splitRatio = Math.max(0.15, Math.min(0.85, ratio));
+      }
+      applySplit();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      const overlay = document.getElementById('drag-overlay');
+      if (overlay) overlay.remove();
+    });
+  }
+
+  // ─── Markdown → HTML via marked.js ───
+
+  function markdownToHtml(md) {
+    if (typeof marked !== 'undefined') {
+      try {
+        return marked.parse(md || '');
+      } catch (e) {
+        return '<p>渲染失败</p>';
+      }
+    }
+    // Fallback: basic conversion
+    return (md || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  }
+
+  function syncHtmlPreview() {
+    const md = MARKDOWN_EDITOR.value || '';
+    HTML_PREVIEW.innerHTML = markdownToHtml(md);
+  }
+
+  // ─── Textarea input handler ───
+
   function init() {
-    if (typeof toastui === 'undefined' || typeof toastui.Editor === 'undefined') {
-      editorFailed = true;
-      createFallback();
-      showToast('编辑器加载失败，已切换到纯文本模式', 'error');
-      return;
-    }
+    // Bind textarea input to enable save + sync preview
+    MARKDOWN_EDITOR.addEventListener('input', () => {
+      if (currentNodeId) {
+        isDirty = true;
+        BTN_SAVE.disabled = false;
+        SAVE_STATUS.textContent = '未保存';
+        SAVE_STATUS.style.color = '#ef4444';
+        syncHtmlPreview();
+      }
+    });
 
-    try {
-      editor = new toastui.Editor({
-        el: EDITOR_CONTAINER,
-        initialEditType: 'markdown',
-        previewStyle: 'vertical',
-        height: '100%',
-        language: 'zh-CN',
-        hideModeSwitch: true,
-        toolbarItems: [
-          ['heading', 'bold', 'italic', 'strike'],
-          ['hr', 'quote'],
-          ['ul', 'ol', 'task'],
-          ['code', 'codeblock'],
-          ['scrollSync'],
-        ],
-      });
-
-      editor.on('change', () => {
-        if (currentNodeId) {
-          isDirty = true;
-          BTN_SAVE.disabled = false;
-          SAVE_STATUS.textContent = '未保存';
-          SAVE_STATUS.style.color = '#e74c3c';
-        }
-      });
-    } catch (e) {
-      editorFailed = true;
-      createFallback();
-      showToast('编辑器初始化失败，已切换到纯文本模式', 'error');
-    }
+    // Tab key support in textarea
+    MARKDOWN_EDITOR.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = MARKDOWN_EDITOR.selectionStart;
+        const end = MARKDOWN_EDITOR.selectionEnd;
+        MARKDOWN_EDITOR.value = MARKDOWN_EDITOR.value.substring(0, start) + '  ' + MARKDOWN_EDITOR.value.substring(end);
+        MARKDOWN_EDITOR.selectionStart = MARKDOWN_EDITOR.selectionEnd = start + 2;
+      }
+    });
   }
 
   function showPlaceholder() {
-    currentMode = 'placeholder';
     currentNodeId = null;
     isDirty = false;
-    EDITOR_CONTAINER.style.display = 'none';
-    HTML_PREVIEW.style.display = 'none';
+    isOwner = false;
+    SPLIT_EDITOR.style.display = 'none';
     PLACEHOLDER.style.display = 'flex';
+    SHARE_BAR.style.display = 'none';
+    SHARE_BAR.innerHTML = '';
     BTN_SAVE.disabled = true;
+    BTN_SAVE.style.display = '';
+    READONLY_BADGE.style.display = 'none';
+    MARKDOWN_PANE.style.display = '';
+    DIVIDER.style.display = '';
+    HIGHLIGHT_INPUT.value = '';
     SAVE_STATUS.textContent = '';
-    BTN_MD.className = 'btn';
-    BTN_HTML.className = 'btn';
+    SAVE_STATUS.style.color = '';
   }
 
-  function showMarkdown() {
-    if (!editor && !editorFailed) init();
-    currentMode = 'markdown';
-    EDITOR_CONTAINER.style.display = 'block';
-    HTML_PREVIEW.style.display = 'none';
-    PLACEHOLDER.style.display = 'none';
-    BTN_MD.className = 'btn btn-active';
-    BTN_HTML.className = 'btn';
-  }
-
-  function showHtml() {
-    currentMode = 'html';
-    EDITOR_CONTAINER.style.display = 'none';
-    PLACEHOLDER.style.display = 'none';
-    HTML_PREVIEW.style.display = 'block';
-    BTN_MD.className = 'btn';
-    BTN_HTML.className = 'btn btn-active';
-    if (editor) {
-      HTML_PREVIEW.innerHTML = editor.getHTML();
-    }
-  }
-
-  function loadContent(nodeId, markdown) {
+  function loadContent(nodeId, markdown, grantees, ownerFlag) {
     currentNodeId = nodeId;
     isDirty = false;
+    isOwner = !!ownerFlag;
     contentBackup = markdown || '';
     BTN_SAVE.disabled = true;
     SAVE_STATUS.textContent = '';
 
-    if (currentMode === 'placeholder') showMarkdown();
+    // Show split editor
+    PLACEHOLDER.style.display = 'none';
+    SPLIT_EDITOR.style.display = 'flex';
 
-    if (editor) {
-      editor.setMarkdown(markdown || '');
-    } else if (editorFailed) {
-      const ta = document.getElementById('fallback-editor');
-      if (ta) ta.value = markdown || '';
+    // Set textarea content and readonly state
+    MARKDOWN_EDITOR.value = markdown || '';
+    MARKDOWN_EDITOR.readOnly = !isOwner;
+
+    if (!isOwner) {
+      // Non-owner: hide markdown pane + divider, show HTML full-width
+      MARKDOWN_PANE.style.display = 'none';
+      DIVIDER.style.display = 'none';
+      HTML_PANE.style.flex = '1 1 auto';
+      // Hide save button, show read-only badge in its place
+      BTN_SAVE.style.display = 'none';
+      READONLY_BADGE.style.display = 'inline-flex';
+      // Hide share bar
+      SHARE_BAR.style.display = 'none';
+      SHARE_BAR.innerHTML = '';
+    } else {
+      // Owner: show markdown pane + divider, normal split
+      MARKDOWN_PANE.style.display = '';
+      DIVIDER.style.display = '';
+      BTN_SAVE.style.display = '';
+      READONLY_BADGE.style.display = 'none';
+    }
+
+    // Render HTML preview (clear any previous highlight marks)
+    syncHtmlPreview();
+
+    // Render grantees bar (owner only)
+    if (isOwner) {
+      renderShareBar(grantees || []);
+      applySplit();
     }
   }
 
+  function renderShareBar(grantees) {
+    if (!grantees || grantees.length === 0) {
+      SHARE_BAR.style.display = 'none';
+      SHARE_BAR.innerHTML = '';
+      return;
+    }
+    SHARE_BAR.style.display = 'flex';
+    let html = '<span class="share-bar-label">分享给：</span>';
+    for (const g of grantees) {
+      html += `<span class="share-bar-chip">${escapeHtmlEditor(g.nickname)}</span>`;
+    }
+    SHARE_BAR.innerHTML = html;
+  }
+
   function getContent() {
-    if (editor) return editor.getMarkdown();
-    const ta = document.getElementById('fallback-editor');
-    return ta ? ta.value : '';
+    return MARKDOWN_EDITOR.value || '';
   }
 
   function getHtml() {
-    if (editor) return editor.getHTML();
-    return '<p>编辑器不可用</p>';
+    return markdownToHtml(MARKDOWN_EDITOR.value);
   }
 
   function markSaved() {
@@ -132,7 +229,7 @@ const WikiEditor = (() => {
     BTN_SAVE.disabled = true;
     contentBackup = getContent();
     SAVE_STATUS.textContent = '已保存';
-    SAVE_STATUS.style.color = '#27ae60';
+    SAVE_STATUS.style.color = '#10b981';
     setTimeout(() => { SAVE_STATUS.textContent = ''; }, 2000);
   }
 
@@ -146,32 +243,22 @@ const WikiEditor = (() => {
 
   function highlightKeyword(keyword) {
     if (!keyword) {
-      // Restore original HTML
-      if (editor && currentMode === 'html') {
-        HTML_PREVIEW.innerHTML = editor.getHTML();
-      } else if (editor) {
-        // In markdown mode, the preview auto-renders, no need to modify
-      }
+      syncHtmlPreview();
       return;
     }
-
-    // For HTML mode, highlight in the rendered HTML
-    if (currentMode === 'html' && editor) {
-      const html = editor.getHTML();
-      const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(${escaped})`, 'gi');
-      HTML_PREVIEW.innerHTML = html.replace(
-        /<mark>.*?<\/mark>/g, (m) => m.replace(/<\/?mark>/g, '')
-      ).replace(regex, '<mark>$1</mark>');
-    }
-    // In markdown mode, ToastUI handles preview — we can't easily highlight there without re-rendering
+    const html = markdownToHtml(MARKDOWN_EDITOR.value);
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    HTML_PREVIEW.innerHTML = html.replace(
+      /<mark>.*?<\/mark>/g, (m) => m.replace(/<\/?mark>/g, '')
+    ).replace(regex, '<mark>$1</mark>');
   }
 
-  BTN_MD.addEventListener('click', showMarkdown);
-  BTN_HTML.addEventListener('click', () => {
-    if (editor) HTML_PREVIEW.innerHTML = editor.getHTML();
-    showHtml();
-  });
+  function escapeHtmlEditor(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
 
   let hlTimer = null;
   HIGHLIGHT_INPUT.addEventListener('input', () => {
@@ -181,7 +268,11 @@ const WikiEditor = (() => {
     }, 300);
   });
 
-  return { init, showPlaceholder, showMarkdown, showHtml, loadContent, getContent, getHtml, markSaved, isUnsaved, getCurrentNodeId };
+  // Initialize
+  init();
+  initDividerDrag();
+
+  return { showPlaceholder, loadContent, getContent, getHtml, markSaved, isUnsaved, getCurrentNodeId };
 })();
 
 function showToast(message, type) {

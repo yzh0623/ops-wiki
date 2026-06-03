@@ -5,7 +5,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 
-from app import db
+from extensions import db
 
 
 class User(db.Model, UserMixin):
@@ -81,6 +81,7 @@ class NodePermission(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (
+        db.UniqueConstraint('node_id', 'grantee_id', name='uq_node_grantee'),
         db.Index('ix_node_permission_node_grantee', 'node_id', 'grantee_id'),
     )
 

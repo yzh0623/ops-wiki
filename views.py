@@ -1,9 +1,15 @@
 """Ops Wiki — wiki node API blueprint (CRUD, tree, import, search)."""
 
+from __future__ import annotations
+
+import logging
+
 from flask import Blueprint, request, jsonify
+
+logger = logging.getLogger(__name__)
 from flask_login import login_required, current_user
 
-from app import db
+from extensions import db
 from models import Node, User, NodePermission as NodePerm
 from crypto import encrypt_content, decrypt_content
 from email_utils import send_notification
@@ -64,6 +70,9 @@ def create_node():
     parent_id = data.get('parent_id')
     type_ = data.get('type', 'document')
 
+    if parent_id is not None and not Node.query.get(parent_id):
+        return jsonify({'error': '父节点不存在'}), 404
+
     if not title:
         return jsonify({'error': '标题不能为空'}), 400
     if type_ not in ('document', 'article'):
@@ -79,13 +88,18 @@ def create_node():
         Node.parent_id == parent_id
     ).scalar() or 0
 
-    node = Node(title=title, parent_id=parent_id, type=type_, sort_order=max_order + 1)
-    node.owner_id = current_user.id
-
     content = data.get('content', '')
-    node.content = content
 
-    if type_ == 'article' and content:
+    node = Node(
+        title=title,
+        parent_id=parent_id,
+        type=type_,
+        sort_order=max_order + 1,
+        content=content,
+        owner_id=current_user.id,
+    )
+
+    if type_ == 'article' and content and current_user.rsa_public_key:
         enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
         node.content = enc_content
         node.encrypted_key = enc_key
@@ -113,21 +127,31 @@ def get_node(node_id):
     data = _node_dict(node)
 
     if not _can_access(node, current_user):
-        data['content'] = None
-        data['owner_id'] = node.owner_id
-        return jsonify(data), 200
+        return jsonify({'error': '无权访问此节点'}), 404
 
     if node.encrypted_key:
         try:
             owner = User.query.get(node.owner_id) if node.owner_id else current_user
             plaintext = decrypt_content(node.content, node.encrypted_key, owner.rsa_private_key)
             data['content'] = plaintext
-        except Exception:
+        except Exception as e:
+            logger.exception('Decryption failed for node %d', node.id)
             data['content'] = '(decryption failed)'
     else:
         data['content'] = node.content
 
     data['owner_id'] = node.owner_id
+    data['is_owner'] = (node.owner_id == current_user.id)
+
+    # Include grantees (users with active access)
+    grantees = NodePerm.query.filter_by(node_id=node.id, is_active=True).all()
+    grantee_list = []
+    for g in grantees:
+        u = User.query.get(g.grantee_id)
+        if u:
+            grantee_list.append({'id': u.id, 'nickname': u.nickname or u.email})
+    data['grantees'] = grantee_list
+
     return jsonify(data), 200
 
 
@@ -135,6 +159,9 @@ def get_node(node_id):
 @login_required
 def update_node(node_id):
     node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '只有所有者才能编辑此节点'}), 403
+
     data = request.get_json(force=True)
 
     if 'title' in data:
@@ -156,7 +183,8 @@ def update_node(node_id):
     if node.encrypted_key:
         try:
             result['content'] = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
-        except Exception:
+        except Exception as e:
+            logger.exception('Decryption failed for node %d during update', node.id)
             result['content'] = node.content
     else:
         result['content'] = node.content
@@ -167,7 +195,35 @@ def update_node(node_id):
 @login_required
 def list_nodes():
     flat = request.args.get('flat', '').lower() == 'true'
-    all_nodes = Node.query.order_by(Node.sort_order, Node.created_at).all()
+
+    # All users (including admin) only see owned + authorized nodes
+    authorized_ids = set(
+        r[0] for r in
+        NodePerm.query.filter_by(grantee_id=current_user.id, is_active=True)
+        .with_entities(NodePerm.node_id)
+        .all()
+    )
+    # Owned nodes + authorized nodes
+    all_nodes = Node.query.filter(
+        db.or_(Node.owner_id == current_user.id, Node.id.in_(authorized_ids))
+    ).order_by(Node.sort_order, Node.created_at).all()
+
+    # Also include parent chain for authorized nodes so the tree can display properly
+    parent_ids = set()
+    for node in all_nodes:
+        pid = node.parent_id
+        while pid is not None:
+            parent_ids.add(pid)
+            parent_node = Node.query.get(pid)
+            if parent_node:
+                pid = parent_node.parent_id
+            else:
+                break
+
+    if parent_ids:
+        existing_ids = {n.id for n in all_nodes}
+        extra_nodes = Node.query.filter(Node.id.in_(parent_ids - existing_ids)).all()
+        all_nodes = sorted(all_nodes + extra_nodes, key=lambda n: (n.sort_order, n.created_at))
 
     if flat:
         return jsonify({'nodes': [_node_dict(n) for n in all_nodes]}), 200
@@ -180,11 +236,18 @@ def list_nodes():
 @login_required
 def delete_node(node_id):
     node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '只有所有者才能删除此节点'}), 403
 
     child_count = Node.query.filter_by(parent_id=node_id).count()
-    Node.query.filter_by(parent_id=node_id).update(
-        {'parent_id': node.parent_id}
-    )
+    # Move children up, appending after existing siblings
+    max_sibling_order = db.session.query(db.func.max(Node.sort_order)).filter(
+        Node.parent_id == node.parent_id
+    ).scalar() or 0
+    children = Node.query.filter_by(parent_id=node_id).order_by(Node.sort_order).all()
+    for idx, child in enumerate(children):
+        child.parent_id = node.parent_id
+        child.sort_order = max_sibling_order + idx + 1
 
     db.session.delete(node)
     db.session.commit()
@@ -220,6 +283,12 @@ def share_node(node_id):
             skipped += 1
             continue
         for uid in user_ids:
+            existing = NodePerm.query.filter_by(node_id=nid, grantee_id=uid).first()
+            if existing:
+                if not existing.is_active:
+                    existing.is_active = True
+                    count += 1
+                continue
             perm = NodePerm(
                 node_id=nid,
                 grantor_id=current_user.id,
@@ -278,6 +347,12 @@ def batch_authorize():
         if node.owner_id != current_user.id:
             continue
         for uid in user_ids:
+            existing = NodePerm.query.filter_by(node_id=node.id, grantee_id=uid).first()
+            if existing:
+                if existing.is_active != is_active:
+                    existing.is_active = is_active
+                    authorized += 1
+                continue
             perm = NodePerm(
                 node_id=node.id,
                 grantor_id=current_user.id,
@@ -338,17 +413,20 @@ def transfer_node(node_id):
         node_ids.extend(_get_subtree_ids(node_id))
 
     transferred = 0
+    node_cache = {}
     for nid in node_ids:
-        n = Node.query.get(nid)
+        n = node_cache.get(nid) or Node.query.get(nid)
         if not n or n.owner_id != current_user.id:
             continue
+        node_cache[nid] = n
 
         plaintext = ''
         if n.encrypted_key and current_user.rsa_private_key:
             try:
                 plaintext = decrypt_content(n.content, n.encrypted_key, current_user.rsa_private_key)
-            except Exception:
-                plaintext = n.content
+            except Exception as e:
+                logger.warning('Decryption failed for node %d during transfer — skipping', n.id)
+                continue
         else:
             plaintext = n.content
 
@@ -364,7 +442,7 @@ def transfer_node(node_id):
 
     if transferred > 0:
         grantor_name = current_user.nickname or current_user.email
-        titles = [Node.query.get(nid).title for nid in node_ids if Node.query.get(nid)]
+        titles = [node_cache[nid].title for nid in node_ids if nid in node_cache and node_cache[nid]]
         body = f'用户 {grantor_name} 已将以下文章的所有权转让给您：\n'
         body += '\n'.join(f'  - {t}' for t in titles[:20])
         if len(titles) > 20:
@@ -409,7 +487,14 @@ def import_markdown(node_id):
         parent_id=parent.id,
         type='article',
         content=content,
+        owner_id=current_user.id,
     )
+
+    if content and current_user.rsa_public_key:
+        enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
+        node.content = enc_content
+        node.encrypted_key = enc_key
+
     db.session.add(node)
     db.session.commit()
     return jsonify(_node_dict(node)), 201
@@ -426,3 +511,20 @@ def search_nodes():
         Node.sort_order, Node.created_at
     ).all()
     return jsonify({'nodes': [_node_dict(n) for n in results]}), 200
+
+
+@views_bp.route('/users', methods=['GET'])
+@login_required
+def list_users():
+    """List active users (excluding current user) for sharing purposes."""
+    users = User.query.filter(
+        User.is_active == True, User.id != current_user.id
+    ).order_by(User.nickname).all()
+    return jsonify({
+        'users': [{
+            'id': u.id,
+            'nickname': u.nickname,
+            'email': u.email,
+            'is_active': u.is_active,
+        } for u in users]
+    }), 200

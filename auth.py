@@ -5,7 +5,7 @@ import re
 from flask import Blueprint, request, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 
-from app import db
+from extensions import db
 from models import User
 from crypto import generate_key_pair
 
@@ -72,7 +72,7 @@ def login():
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({'error': '邮箱或密码错误'}), 404
+        return jsonify({'error': '邮箱或密码错误'}), 401
 
     if not user.check_password(password):
         return jsonify({'error': '邮箱或密码错误'}), 401

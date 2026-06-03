@@ -1,7 +1,7 @@
 """Ops Wiki — admin-only blueprint (user management)."""
 from flask import Blueprint, request, jsonify
 from flask_login import current_user
-from app import db
+from extensions import db
 from models import User
 from decorators import admin_required
 
@@ -46,12 +46,4 @@ def deactivate_user(user_id):
     return jsonify({**_user_dict(user), 'message': '用户已停用'}), 200
 
 
-@admin_bp.route('/users/<int:user_id>/private-key', methods=['GET'])
-@admin_required
-def get_user_private_key(user_id):
-    user = User.query.get_or_404(user_id)
-    return jsonify({
-        'user_id': user.id,
-        'email': user.email,
-        'rsa_private_key': user.rsa_private_key,
-    }), 200
+

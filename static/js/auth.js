@@ -34,6 +34,7 @@ const Auth = (() => {
           currentUser = data;
           document.getElementById('auth-overlay').style.display = 'none';
           updateUI();
+          if (typeof Tree !== 'undefined' && Tree.setCurrentUserId) Tree.setCurrentUserId(data.id);
           if (typeof Tree !== 'undefined' && Tree.loadTree) Tree.loadTree();
         } else {
           errorEl.textContent = data.error || '登录失败';
@@ -59,13 +60,13 @@ const Auth = (() => {
         });
         const data = await res.json();
         if (res.ok) {
-          errorEl.style.color = '#27ae60';
+          errorEl.style.color = '#10b981';
           errorEl.textContent = '注册成功！等待管理员审批后即可登录。';
           document.getElementById('reg-email').value = '';
           document.getElementById('reg-password').value = '';
           document.getElementById('reg-nickname').value = '';
         } else {
-          errorEl.style.color = '#e74c3c';
+          errorEl.style.color = '#ef4444';
           errorEl.textContent = data.error || '注册失败';
         }
       } catch (err) {
@@ -78,6 +79,9 @@ const Auth = (() => {
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch (_) {}
       currentUser = null;
+      if (typeof Tree !== 'undefined' && Tree.resetCurrentUserId) {
+        Tree.resetCurrentUserId();
+      }
       document.getElementById('auth-overlay').style.display = 'flex';
       document.getElementById('login-modal').style.display = 'block';
       document.getElementById('register-modal').style.display = 'none';
@@ -85,6 +89,11 @@ const Auth = (() => {
       document.getElementById('login-email').value = '';
       document.getElementById('login-password').value = '';
       updateUI();
+      // Clear UI state on logout
+      document.getElementById('tree-container').innerHTML = '<div class="tree-placeholder">暂无文档</div>';
+      if (typeof WikiEditor !== 'undefined' && WikiEditor.showPlaceholder) {
+        WikiEditor.showPlaceholder();
+      }
     });
   }
 
@@ -110,6 +119,7 @@ const Auth = (() => {
         currentUser = await res.json();
         document.getElementById('auth-overlay').style.display = 'none';
         updateUI();
+        if (typeof Tree !== 'undefined' && Tree.setCurrentUserId) Tree.setCurrentUserId(currentUser.id);
         if (typeof Tree !== 'undefined' && Tree.loadTree) Tree.loadTree();
       } else {
         document.getElementById('auth-overlay').style.display = 'flex';
@@ -123,7 +133,7 @@ const Auth = (() => {
     }
   }
 
-  function getUser() { return currentUser;   }
+  function getUser() { return currentUser; }
 
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-admin').addEventListener('click', () => {

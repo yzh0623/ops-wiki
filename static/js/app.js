@@ -1,11 +1,10 @@
 /* Ops Wiki — Main application controller */
 
 const App = (() => {
-  let saveTimeout = null;
-
   function init() {
     bindSaveButton();
     bindKeyboard();
+    bindDialogs();
   }
 
   function bindSaveButton() {
@@ -28,11 +27,6 @@ const App = (() => {
       return;
     }
 
-    if (!(typeof WikiEditor !== 'undefined' && WikiEditor.isUnsaved())) {
-      showToast('没有需要保存的更改', 'error');
-      return;
-    }
-
     const content = WikiEditor.getContent();
 
     try {
@@ -41,6 +35,11 @@ const App = (() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       });
+
+      if (res.status === 403) {
+        showToast('你没有权限编辑此节点', 'error');
+        return;
+      }
 
       if (res.ok) {
         WikiEditor.markSaved();
@@ -58,92 +57,45 @@ const App = (() => {
     return typeof Auth !== 'undefined' ? (Auth.getUser()?.id || null) : null;
   }
 
-  // ─── Share Dialog ───
-
-  async function openShareDialog() {
-    const selectedIds = typeof Tree !== 'undefined' && Tree.getSelectedIds ? Tree.getSelectedIds() : [];
-    if (selectedIds.length === 0) {
-      showToast('请先在树中选择要分享的文章', 'error');
-      return;
-    }
-
-    const res = await fetch('/api/admin/users');
-    if (!res.ok) { showToast('加载用户列表失败', 'error'); return; }
-    const data = await res.json();
-    const currentUserId = getCurrentUserId();
-    const activeUsers = (data.users || []).filter(u => u.is_active && u.id !== currentUserId);
-
-    const dialog = document.getElementById('share-dialog');
-    const userList = document.getElementById('share-user-list');
-
-    // Calculate descendant count
-    let totalDescendant = 0;
-    for (const id of selectedIds) {
-      if (typeof Tree !== 'undefined' && Tree.countDescendants) {
-        totalDescendant += Tree.countDescendants(id);
-      }
-    }
-    const totalNodes = selectedIds.length + totalDescendant;
-
-    dialog.querySelector('.modal-header h3').textContent =
-      totalDescendant > 0 ? `分享 ${totalNodes} 个节点（含 ${totalDescendant} 个子节点）` : `分享 ${selectedIds.length} 篇文章`;
-
-    const recursiveCheckbox = document.getElementById('share-recursive');
-    if (recursiveCheckbox) {
-      recursiveCheckbox.style.display = totalDescendant > 0 ? '' : 'none';
-    }
-
-    let html = '';
-    for (const u of activeUsers) {
-      html += `<label class="user-checkbox"><input type="checkbox" value="${u.id}" data-email="${u.email}" /> ${escapeHtml(u.nickname || u.email)}</label>`;
-    }
-    userList.innerHTML = html || '<p style="padding:8px;color:#999">没有其他活跃用户</p>';
-
-    dialog.style.display = 'flex';
-    dialog.dataset.nodeIds = selectedIds.join(',');
-  }
-
   // ─── Batch Auth Dialog ───
 
   async function openBatchAuthDialog(mode) {
     const selectedIds = typeof Tree !== 'undefined' && Tree.getSelectedIds ? Tree.getSelectedIds() : [];
     if (selectedIds.length === 0) {
-      showToast('请先在树中选择文章', 'error');
+      showToast('请先选择文章', 'error');
       return;
     }
 
-    const res = await fetch('/api/admin/users');
+    const res = await fetch('/api/users');
     if (!res.ok) { showToast('加载用户列表失败', 'error'); return; }
     const data = await res.json();
     const currentUserId = getCurrentUserId();
-    const activeUsers = (data.users || []).filter(u => u.is_active && u.id !== currentUserId);
+    const activeUsers = (data.users || []).filter(u => u.is_active !== false && u.id !== currentUserId);
 
     const dialog = document.getElementById('batch-dialog');
     const userList = document.getElementById('batch-user-list');
     dialog.querySelector('.batch-dialog-title').textContent = mode === 'grant' ? '批量授权' : '批量撤销';
 
-    // Calculate descendant count
-    let totalDescendant = 0;
+    const recursiveLabel = document.getElementById('batch-recursive-label');
+    let totalDesc = 0;
     for (const id of selectedIds) {
       if (typeof Tree !== 'undefined' && Tree.countDescendants) {
-        totalDescendant += Tree.countDescendants(id);
+        totalDesc += Tree.countDescendants(id);
       }
     }
-    const totalNodes = selectedIds.length + totalDescendant;
-    if (totalDescendant > 0) {
-      dialog.querySelector('.batch-dialog-title').textContent += ` ${totalNodes} 个节点（含 ${totalDescendant} 个子节点）`;
+    const total = selectedIds.length + totalDesc;
+    if (totalDesc > 0) {
+      dialog.querySelector('.batch-dialog-title').textContent += ` ${total} 个节点（含 ${totalDesc} 个子节点）`;
     }
-
-    const recursiveCheckbox = document.getElementById('batch-recursive');
-    if (recursiveCheckbox) {
-      recursiveCheckbox.style.display = totalDescendant > 0 ? '' : 'none';
+    if (recursiveLabel) {
+      recursiveLabel.style.display = totalDesc > 0 ? '' : 'none';
     }
 
     let html = '';
     for (const u of activeUsers) {
       html += `<label class="user-checkbox"><input type="checkbox" value="${u.id}" /> ${escapeHtml(u.nickname || u.email)}</label>`;
     }
-    userList.innerHTML = html || '<p style="padding:8px;color:#999">没有其他活跃用户</p>';
+    userList.innerHTML = html || '<p style="padding:12px;color:#94a3b8;font-size:13px">没有其他活跃用户</p>';
 
     dialog.style.display = 'flex';
     dialog.dataset.mode = mode;
@@ -159,11 +111,11 @@ const App = (() => {
       return;
     }
 
-    const res = await fetch('/api/admin/users');
+    const res = await fetch('/api/users');
     if (!res.ok) { showToast('加载用户列表失败', 'error'); return; }
     const data = await res.json();
     const currentUserId = getCurrentUserId();
-    const activeUsers = (data.users || []).filter(u => u.is_active && u.id !== currentUserId);
+    const activeUsers = (data.users || []).filter(u => u.is_active !== false && u.id !== currentUserId);
 
     const dialog = document.getElementById('transfer-dialog');
     const select = document.getElementById('transfer-user-select');
@@ -172,18 +124,16 @@ const App = (() => {
       select.innerHTML += `<option value="${u.id}">${escapeHtml(u.nickname || u.email)}</option>`;
     }
 
-    // Calculate descendant count for the single selected node
-    let totalDescendant = 0;
+    let totalDesc = 0;
     if (typeof Tree !== 'undefined' && Tree.countDescendants) {
-      totalDescendant = Tree.countDescendants(selectedIds[0]);
+      totalDesc = Tree.countDescendants(selectedIds[0]);
     }
-    const totalNodes = 1 + totalDescendant;
     dialog.querySelector('.modal-header h3').textContent =
-      totalDescendant > 0 ? `权限转让 ${totalNodes} 个节点（含 ${totalDescendant} 个子节点）` : '权限转让';
+      totalDesc > 0 ? `权限转让（含 ${totalDesc} 个子节点）` : '权限转让';
 
-    const recursiveCheckbox = document.getElementById('transfer-recursive');
-    if (recursiveCheckbox) {
-      recursiveCheckbox.style.display = totalDescendant > 0 ? '' : 'none';
+    const recursiveLabel = document.getElementById('transfer-recursive-label');
+    if (recursiveLabel) {
+      recursiveLabel.style.display = totalDesc > 0 ? '' : 'none';
     }
 
     dialog.style.display = 'flex';
@@ -191,31 +141,6 @@ const App = (() => {
   }
 
   // ─── Dialog Save Handlers ───
-
-  async function handleShareSave() {
-    const dialog = document.getElementById('share-dialog');
-    const nodeIds = (dialog.dataset.nodeIds || '').split(',').map(Number).filter(n => n);
-    const selectedUsers = [...document.querySelectorAll('#share-user-list input:checked')].map(el => parseInt(el.value));
-
-    if (selectedUsers.length === 0) {
-      showToast('请选择要授权的用户', 'error');
-      return;
-    }
-
-    const recursive = document.getElementById('share-recursive')?.checked || false;
-    const res = await fetch('/api/nodes/batch-authorize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node_ids: nodeIds, user_ids: selectedUsers, is_active: true, recursive }),
-    });
-    if (res.ok) {
-      showToast('授权成功', 'success');
-      dialog.style.display = 'none';
-    } else {
-      const d = await res.json();
-      showToast(d.error || '授权失败', 'error');
-    }
-  }
 
   async function handleBatchSave() {
     const dialog = document.getElementById('batch-dialog');
@@ -234,6 +159,19 @@ const App = (() => {
     if (res.ok) {
       showToast(mode === 'grant' ? '授权成功' : '已撤销', 'success');
       dialog.style.display = 'none';
+      // Refresh current node to update share bar
+      const activeId = typeof Tree !== 'undefined' ? Tree.getActiveId() : null;
+      if (activeId) {
+        try {
+          const nodeRes = await fetch(`/api/nodes/${activeId}`);
+          if (nodeRes.ok) {
+            const node = await nodeRes.json();
+            if (typeof WikiEditor !== 'undefined') {
+              WikiEditor.loadContent(activeId, node.content || '', node.grantees || [], node.is_owner);
+            }
+          }
+        } catch (_) {}
+      }
     } else {
       const d = await res.json();
       showToast(d.error || '操作失败', 'error');
@@ -264,10 +202,34 @@ const App = (() => {
       showToast('所有权转让成功', 'success');
       dialog.style.display = 'none';
       if (typeof Tree !== 'undefined' && Tree.loadTree) Tree.loadTree();
+      // Refresh current editor — current user is no longer owner
+      const activeId = typeof Tree !== 'undefined' ? Tree.getActiveId() : null;
+      if (activeId) {
+        try {
+          const nodeRes = await fetch(`/api/nodes/${activeId}`);
+          if (nodeRes.ok) {
+            const node = await nodeRes.json();
+            if (typeof WikiEditor !== 'undefined') {
+              WikiEditor.loadContent(activeId, node.content || '', node.grantees || [], node.is_owner);
+            }
+          }
+        } catch (_) {}
+      }
     } else {
       const d = await res.json();
       showToast(d.error || '转让失败', 'error');
     }
+  }
+
+  async function handleRenameConfirm() {
+    const dialog = document.getElementById('rename-dialog');
+    const nodeId = parseInt(dialog.dataset.nodeId);
+    const newTitle = document.getElementById('rename-input').value.trim();
+    if (!newTitle) { showToast('标题不能为空', 'error'); return; }
+    if (typeof Tree !== 'undefined' && Tree.renameNode) {
+      await Tree.renameNode(nodeId, newTitle);
+    }
+    dialog.style.display = 'none';
   }
 
   function escapeHtml(text) {
@@ -276,18 +238,8 @@ const App = (() => {
     return div.innerHTML;
   }
 
-  // Bind dialog event handlers on DOM ready
+  // Bind dialog event handlers
   function bindDialogs() {
-    const shareBtn = document.getElementById('btn-share');
-    if (shareBtn) {
-      shareBtn.addEventListener('click', openShareDialog);
-    }
-
-    const shareSaveBtn = document.getElementById('btn-share-save');
-    if (shareSaveBtn) {
-      shareSaveBtn.addEventListener('click', handleShareSave);
-    }
-
     const batchSaveBtn = document.getElementById('btn-batch-save');
     if (batchSaveBtn) {
       batchSaveBtn.addEventListener('click', handleBatchSave);
@@ -298,36 +250,13 @@ const App = (() => {
       transferConfirmBtn.addEventListener('click', handleTransferConfirm);
     }
 
-    // Context menu item clicks
-    const ctxBatch = document.getElementById('ctx-batch-authorize');
-    if (ctxBatch) {
-      ctxBatch.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.getElementById('context-menu').style.display = 'none';
-        openBatchAuthDialog('grant');
-      });
-    }
-
-    const ctxRevoke = document.getElementById('ctx-revoke');
-    if (ctxRevoke) {
-      ctxRevoke.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.getElementById('context-menu').style.display = 'none';
-        openBatchAuthDialog('revoke');
-      });
-    }
-
-    const ctxTransfer = document.getElementById('ctx-transfer');
-    if (ctxTransfer) {
-      ctxTransfer.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.getElementById('context-menu').style.display = 'none';
-        openTransferDialog();
-      });
+    const renameConfirmBtn = document.getElementById('btn-rename-confirm');
+    if (renameConfirmBtn) {
+      renameConfirmBtn.addEventListener('click', handleRenameConfirm);
     }
 
     // Close dialogs on overlay click
-    ['share-dialog', 'batch-dialog', 'transfer-dialog'].forEach(id => {
+    ['batch-dialog', 'transfer-dialog', 'rename-dialog'].forEach(id => {
       const el = document.getElementById(id);
       if (el) {
         el.addEventListener('click', (e) => {
@@ -347,13 +276,12 @@ const App = (() => {
 
   // Initialize when DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { init(); bindDialogs(); });
+    document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
-    bindDialogs();
   }
 
-  return { saveCurrentNode };
+  return { saveCurrentNode, openBatchAuthDialog, openTransferDialog };
 })();
 
 /* Ops Wiki — Admin panel (user management) */
@@ -391,28 +319,31 @@ const AdminPanel = (() => {
 
   function renderUsers(users) {
     if (users.length === 0) {
-      USER_LIST.innerHTML = '<p style="padding:16px;color:#999">暂无用户</p>';
+      USER_LIST.innerHTML = '<p style="padding:16px;color:#94a3b8;font-size:13px">暂无用户</p>';
       return;
     }
 
-    let html = '<table class="admin-table"><thead><tr>';
-    html += '<th>ID</th><th>邮箱</th><th>昵称</th><th>状态</th><th>注册时间</th><th>操作</th>';
+    let html = '<table><thead><tr>';
+    html += '<th>ID</th><th>邮箱</th><th>昵称</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th>';
     html += '</tr></thead><tbody>';
 
     for (const u of users) {
-      const status = u.is_active ? '已激活' : '待审批';
       const statusClass = u.is_active ? 'status-active' : 'status-pending';
+      const status = u.is_active ? '已激活' : '待审批';
+      const roleClass = u.is_admin ? 'role-admin' : 'role-user';
+      const role = u.is_admin ? '管理员' : '普通用户';
       const created = u.created_at ? new Date(u.created_at).toLocaleString('zh-CN') : '-';
 
       html += `<tr>
         <td>${u.id}</td>
         <td>${escapeHtmlAdmin(u.email)}</td>
         <td>${escapeHtmlAdmin(u.nickname || '-')}</td>
+        <td><span class="${roleClass}">${role}</span></td>
         <td><span class="${statusClass}">${status}</span></td>
         <td>${created}</td>
         <td>
-          ${!u.is_active ? `<button class="btn btn-sm btn-approve" data-id="${u.id}">审批</button>` : ''}
-          ${u.is_active ? `<button class="btn btn-sm btn-deactivate" data-id="${u.id}">停用</button>` : ''}
+          ${!u.is_active ? `<button class="btn-approve" data-id="${u.id}">审批</button>` : ''}
+          ${u.is_active ? `<button class="btn-deactivate" data-id="${u.id}">停用</button>` : ''}
         </td>
       </tr>`;
     }

@@ -1,5 +1,7 @@
 """Hybrid encryption: AES-256-GCM (content) + RSA-2048 OAEP (AES key)."""
 
+from __future__ import annotations
+
 import base64
 import os
 

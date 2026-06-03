@@ -1,16 +1,14 @@
-/* Ops Wiki — Tree sidebar component (render, CRUD, search, permission multi-select) */
+/* Ops Wiki — Tree sidebar component (right-click context menu, CRUD, search) */
 
 const Tree = (() => {
-  let allNodes = [];       // Flat list for search
+  let allNodes = [];       // Flat list for search/counting
   let treeData = [];       // Nested tree for rendering
-  let selectedId = null;
+  let activeId = null;     // Currently active (editor-loaded) node
+  let selectedIds = new Set(); // Multi-selected node IDs (for batch ops)
   let searchKeyword = '';
-  let currentDepth = 0;
-
-  // Multi-select state
-  let selectedIds = new Set();  // Set of selected node IDs
-  let lastClickedId = null;
   let currentUserId = null;
+  let contextNodeId = null; // Node ID that was right-clicked
+  let pendingSelectId = null; // ID to select after tree reload
 
   const TREE_CONTAINER = document.getElementById('tree-container');
   const SEARCH_INPUT = document.getElementById('search-tree');
@@ -18,13 +16,8 @@ const Tree = (() => {
   // ─── API Calls ───
 
   async function fetchTree() {
-    const res = await fetch('/api/nodes');
-    const data = await res.json();
-    return data.nodes || [];
-  }
-
-  async function fetchFlat() {
     const res = await fetch('/api/nodes?flat=true');
+    if (!res.ok) throw new Error('Failed to fetch tree');
     const data = await res.json();
     return data.nodes || [];
   }
@@ -46,141 +39,71 @@ const Tree = (() => {
 
   function renderTree() {
     if (!treeData || treeData.length === 0) {
-      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">暂无文档，点击上方"新增文档"创建</div>';
+      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">暂无文档<br><span style="opacity:0.6">右键点击此处新增</span></div>';
       return;
     }
 
-    if (searchKeyword) {
-      const filtered = filterTree(treeData, searchKeyword);
-      TREE_CONTAINER.innerHTML = renderNodes(filtered, 0);
-    } else {
-      TREE_CONTAINER.innerHTML = renderNodes(treeData, 0);
+    const data = searchKeyword ? filterTree(treeData, searchKeyword) : treeData;
+    if (searchKeyword && data.length === 0) {
+      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">未找到匹配文档</div>';
+      return;
     }
 
-    // Attach event listeners after rendering
-    TREE_CONTAINER.querySelectorAll('.tree-toggle').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const li = el.closest('.tree-item');
-        const ul = li.querySelector('.tree-children');
-        if (ul) {
-          ul.style.display = ul.style.display === 'none' ? 'block' : 'none';
-          el.textContent = ul.style.display === 'none' ? '\u25B6' : '\u25BC';
-        }
-      });
-    });
+    TREE_CONTAINER.innerHTML = renderNodes(data, 0);
+    bindTreeEvents();
 
-    TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = parseInt(el.dataset.id);
-        selectNode(id, e);
-      });
-    });
-
-    // Checkbox clicks
-    TREE_CONTAINER.querySelectorAll('.tree-checkbox').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = parseInt(el.dataset.id);
-        if (el.checked) {
-          selectedIds.add(id);
-        } else {
-          selectedIds.delete(id);
-        }
-        renderTree();
-        updateToolbarButtons();
-      });
-    });
-
-    // Right-click context menu on tree items
-    TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
-      el.addEventListener('contextmenu', (e) => {
-        showContextMenu(e, parseInt(el.dataset.id));
-      });
-    });
-
-    TREE_CONTAINER.querySelectorAll('.btn-tree-add').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const parentId = parseInt(el.dataset.id);
-        const type = el.dataset.type;
-        addNode(parentId, type);
-      });
-    });
-
-    TREE_CONTAINER.querySelectorAll('.btn-tree-delete').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = parseInt(el.dataset.id);
-        deleteNode(id);
-      });
-    });
-
-    TREE_CONTAINER.querySelectorAll('.btn-tree-import').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = parseInt(el.dataset.id);
-        importMarkdown(id);
-      });
-    });
-
-    // Update toolbar after render
-    updateToolbarButtons();
+    // Handle pending select after render
+    if (pendingSelectId) {
+      const id = pendingSelectId;
+      pendingSelectId = null;
+      selectNode(id);
+    }
   }
 
   function renderNodes(nodes, depth) {
-    let html = '<ul class="tree-list" style="padding-left:0">';
+    let html = '<ul class="tree-list">';
     for (const node of nodes) {
       const hasChildren = node.children && node.children.length > 0;
-      const isSelected = selectedIds.has(node.id);
-      const paddingLeft = 8 + depth * 20;
-      const canSelect = currentUserId === node.owner_id;
-      const checked = canSelect && isSelected ? 'checked' : '';
-      const disabled = !canSelect ? 'disabled' : '';
-      const ownerIcon = node.owner_id === currentUserId ? '\u{1F512}' : '\u{1F465}'; // 🔒 or 👥
+      const isActive = activeId === node.id;
+      const isMultiSelected = selectedIds.has(node.id) && activeId !== node.id;
+      const isOwned = node.owner_id === currentUserId;
+      const ownerIcon = isOwned
+        ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 
-      html += `<li class="tree-item ${isSelected ? 'selected' : ''}" data-id="${node.id}" data-owner="${node.owner_id || ''}">`;
-      html += `<div class="tree-item-content" data-id="${node.id}" data-owner="${node.owner_id || ''}" style="padding-left:${paddingLeft}px">`;
+      let cls = 'tree-item';
+      if (isActive) cls += ' active';
+      if (isMultiSelected) cls += ' multi-selected';
+
+      html += `<li class="${cls}" data-id="${node.id}" data-owner="${node.owner_id || ''}">`;
+      html += `<div class="tree-item-content" data-id="${node.id}" data-owner="${node.owner_id || ''}" style="padding-left:${depth * 16 + 8}px">`;
 
       // Expand/collapse toggle
       if (hasChildren) {
-        html += `<span class="tree-toggle">&#9660;</span>`;
+        html += `<span class="tree-toggle expanded">&#9654;</span>`;
       } else {
-        html += `<span class="tree-toggle" style="visibility:hidden">&#9660;</span>`;
+        html += `<span class="tree-toggle empty">&#9654;</span>`;
       }
-
-      // Checkbox (only own nodes are selectable)
-      html += `<input type="checkbox" class="tree-checkbox" data-id="${node.id}" ${checked} ${disabled} />`;
 
       // Owner icon
       html += `<span class="tree-icon">${ownerIcon}</span>`;
 
       // Title
-      html += `<span class="tree-title">${escapeHtml(node.title)}</span>`;
+      html += `<span class="tree-label">${escapeHtml(node.title)}</span>`;
 
-      // Descendant count indicator
+      // Descendant count
       if (hasChildren) {
-        const descendantCount = countDescendants(node.id);
-        if (descendantCount > 0) {
-          html += `<span class="tree-descendant-count">(含 ${descendantCount} 个子节点)</span>`;
+        const dc = countDescendants(node);
+        if (dc > 0) {
+          html += `<span class="tree-descendant-count">${dc}</span>`;
         }
       }
 
-      // Operation buttons
-      const nodeType = node.type || 'document';
-      html += `<span class="node-ops">`;
-      html += `<button class="btn-tree-add" data-id="${node.id}" data-type="document" title="新增文档">+文档</button>`;
-      html += `<button class="btn-tree-add" data-id="${node.id}" data-type="article" title="新增文章">+文章</button>`;
-      html += `<button class="btn-tree-import" data-id="${node.id}" title="导入 Markdown">导入</button>`;
-      html += `<button class="btn-tree-delete" data-id="${node.id}" title="删除">删除</button>`;
-      html += `</span>`;
-
       html += `</div>`;
 
-      // Children
+      // Children (rendered expanded by default)
       if (hasChildren) {
-        html += `<ul class="tree-children">${renderNodes(node.children, depth + 1)}</ul>`;
+        html += `<ul class="tree-children expanded">${renderNodes(node.children, depth + 1)}</ul>`;
       }
 
       html += `</li>`;
@@ -195,11 +118,59 @@ const Tree = (() => {
     return div.innerHTML;
   }
 
+  function bindTreeEvents() {
+    // Toggle expand/collapse
+    TREE_CONTAINER.querySelectorAll('.tree-toggle:not(.empty)').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const li = el.closest('.tree-item');
+        const ul = li.querySelector(':scope > .tree-children');
+        if (ul) {
+          const isExpanded = ul.classList.contains('expanded');
+          if (isExpanded) {
+            ul.classList.remove('expanded');
+            el.classList.remove('expanded');
+          } else {
+            ul.classList.add('expanded');
+            el.classList.add('expanded');
+          }
+        }
+      });
+    });
+
+    // Left-click: select node (load in editor)
+    TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = parseInt(el.dataset.id);
+        selectNode(id, e);
+      });
+    });
+
+    // Right-click: context menu
+    TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = parseInt(el.dataset.id);
+        showContextMenu(e, id);
+      });
+    });
+  }
+
   // ─── Search ───
 
-  function countDescendants(nodeId) {
+  function countDescendants(nodeOrId) {
+    if (typeof nodeOrId === 'object' && nodeOrId.children) {
+      let count = 0;
+      for (const child of nodeOrId.children) {
+        count += 1 + countDescendants(child);
+      }
+      return count;
+    }
+    // Fallback: use allNodes flat list
     let count = 0;
-    const children = allNodes.filter(n => n.parent_id === nodeId);
+    const children = allNodes.filter(n => n.parent_id === nodeOrId);
     for (const child of children) {
       count += 1 + countDescendants(child.id);
     }
@@ -223,100 +194,112 @@ const Tree = (() => {
 
   async function selectNode(id, event) {
     if (event && (event.ctrlKey || event.metaKey)) {
-      // Ctrl+click: toggle selection
+      // Ctrl+click: toggle multi-select
       if (selectedIds.has(id)) {
         selectedIds.delete(id);
+        // If deselecting the active node, keep it as active but unselected from multi
+        if (activeId === id) {
+          // Keep activeId, just remove from multi-select
+        }
       } else {
         selectedIds.add(id);
       }
-    } else {
-      // Single click: clear previous selection
-      selectedIds.clear();
-      selectedIds.add(id);
-      selectedId = id;
-
-      // Fetch node content for editor
-      try {
-        const res = await fetch(`/api/nodes/${id}`);
-        const node = await res.json();
-        if (node.content === null && node.owner_id && node.owner_id !== (typeof Auth !== 'undefined' ? Auth.getUser()?.id : null)) {
-          showToast('你没有权限查看此文章的内容', 'error');
-        }
-        if (typeof WikiEditor !== 'undefined') {
-          WikiEditor.loadContent(id, node.content || '');
-        }
-      } catch (e) {
-        showToast('加载节点内容失败', 'error');
-      }
+      renderTree();
+      return;
     }
-    lastClickedId = id;
+
+    // Normal click: single select
+    selectedIds.clear();
+    selectedIds.add(id);
+    activeId = id;
+
+    // Fetch node content for editor
+    try {
+      const res = await fetch(`/api/nodes/${id}`);
+      const node = await res.json();
+      if (node.content === null && node.owner_id && node.owner_id !== currentUserId) {
+        showToast('你没有权限查看此文章的内容', 'error');
+      }
+      if (typeof WikiEditor !== 'undefined') {
+        WikiEditor.loadContent(id, node.content || '', node.grantees || [], node.is_owner);
+      }
+    } catch (e) {
+      showToast('加载节点内容失败', 'error');
+    }
     renderTree();
   }
 
   // ─── Context Menu ───
 
   function showContextMenu(e, nodeId) {
-    e.preventDefault();
+    contextNodeId = nodeId;
 
-    // If right-clicked node is not in selection, temporarily treat it as sole selection
+    // If right-clicked node is not in selection, make it the sole selection
     if (!selectedIds.has(nodeId)) {
-      // Don't change selection — context menu acts on current selection only
+      selectedIds.clear();
+      selectedIds.add(nodeId);
+      activeId = nodeId;
+      renderTree();
     }
 
     const menu = document.getElementById('context-menu');
-    menu.style.display = 'block';
-    menu.style.left = e.pageX + 'px';
-    menu.style.top = e.pageY + 'px';
-
-    // Only enable "批量授权" / "批量撤销" / "权限转让" if at least one owned node is selected
-    const hasOwned = [...selectedIds].some(id => {
-      const el = document.querySelector(`.tree-item[data-id="${id}"]`);
-      return el && parseInt(el.dataset.owner) === currentUserId;
+    const node = allNodes.find(n => n.id === nodeId);
+    const isOwner = node && node.owner_id === currentUserId;
+    const hasOwnedSelection = [...selectedIds].some(id => {
+      const n = allNodes.find(an => an.id === id);
+      return n && n.owner_id === currentUserId;
     });
 
-    // Calculate total nodes including descendants
-    let totalNodeCount = selectedIds.size;
-    let totalDescendantCount = 0;
-    for (const id of selectedIds) {
-      totalDescendantCount += countDescendants(id);
-    }
-    const totalWithDescendants = totalNodeCount + totalDescendantCount;
+    // Show/hide items based on ownership
+    const deleteItem = menu.querySelector('[data-action="delete"]');
+    const batchAuthItem = menu.querySelector('[data-action="batch-authorize"]');
+    const batchRevokeItem = menu.querySelector('[data-action="batch-revoke"]');
+    const transferItem = menu.querySelector('[data-action="transfer"]');
 
-    const batchItem = document.getElementById('ctx-batch-authorize');
-    const revokeItem = document.getElementById('ctx-revoke');
-    const transferItem = document.getElementById('ctx-transfer');
+    deleteItem.style.display = isOwner ? '' : 'none';
 
-    batchItem.style.display = (hasOwned && selectedIds.size > 0) ? 'block' : 'none';
-    revokeItem.style.display = (hasOwned && selectedIds.size > 0) ? 'block' : 'none';
-    transferItem.style.display = (hasOwned && selectedIds.size === 1) ? 'block' : 'none';
+    // Batch operations
+    const showAuthSection = hasOwnedSelection;
+    batchAuthItem.style.display = showAuthSection ? '' : 'none';
+    batchRevokeItem.style.display = showAuthSection ? '' : 'none';
+    transferItem.style.display = showAuthSection && selectedIds.size === 1 ? '' : 'none';
 
-    const suffix = totalDescendantCount > 0 ? `（含 ${totalDescendantCount} 个子节点）` : '';
-    batchItem.textContent = `批量授权 ${totalWithDescendants} 个节点${suffix}`;
-    revokeItem.textContent = `批量撤销 ${totalWithDescendants} 个节点${suffix}`;
-    transferItem.textContent = `权限转让 ${totalWithDescendants} 个节点${suffix}`;
-
-    menu.dataset.nodeId = nodeId;
-    menu.dataset.nodeIds = [...selectedIds].join(',');
+    // Position the menu with bounds checking
+    menu.style.display = 'block';
+    const menuRect = menu.getBoundingClientRect();
+    const x = Math.min(e.clientX, window.innerWidth - menuRect.width - 8);
+    const y = Math.min(e.clientY, window.innerHeight - menuRect.height - 8);
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
   }
 
-  // Hide context menu on click elsewhere
+  function showEmptyContextMenu(e) {
+    const menu = document.getElementById('empty-context-menu');
+    menu.style.display = 'block';
+    const menuRect = menu.getBoundingClientRect();
+    const x = Math.min(e.clientX, window.innerWidth - menuRect.width - 8);
+    const y = Math.min(e.clientY, window.innerHeight - menuRect.height - 8);
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+  }
+
+  // Hide all context menus on click elsewhere
   document.addEventListener('click', () => {
-    const menu = document.getElementById('context-menu');
-    if (menu) menu.style.display = 'none';
+    document.getElementById('context-menu').style.display = 'none';
+    document.getElementById('empty-context-menu').style.display = 'none';
   });
 
-  // ─── Toolbar Buttons ───
-
-  function updateToolbarButtons() {
-    const shareBtn = document.getElementById('btn-share');
-    if (!shareBtn) return;
-    const hasOwnedSelected = [...selectedIds].some(id => {
-      const el = document.querySelector(`.tree-item[data-id="${id}"]`);
-      return el && parseInt(el.dataset.owner) === currentUserId;
-    });
-    const currentUser = typeof Auth !== 'undefined' ? Auth.getUser() : null;
-    shareBtn.style.display = (hasOwnedSelected && currentUser) ? 'inline-block' : 'none';
-  }
+  document.addEventListener('contextmenu', (e) => {
+    // Prevent default browser context menu
+    if (e.target.closest('#tree-container') || e.target.closest('#sidebar')) {
+      e.preventDefault();
+      // If right-clicking on empty space within tree container
+      if (!e.target.closest('.tree-item-content')) {
+        document.getElementById('context-menu').style.display = 'none';
+        showEmptyContextMenu(e);
+      }
+    }
+  });
 
   // ─── CRUD Operations ───
 
@@ -329,14 +312,17 @@ const Tree = (() => {
       const res = await fetch('/api/nodes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_id: parentId || null, title: title.trim(), type }),
+        body: JSON.stringify({ parent_id: parentId, title: title.trim(), type }),
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || '创建失败');
+        showToast(data.error || '创建失败', 'error');
         return;
       }
+      const newNode = await res.json();
+      pendingSelectId = newNode.id;
       await loadTree();
+      showToast(`${label}创建成功`, 'success');
     } catch (e) {
       showToast('创建节点失败', 'error');
     }
@@ -349,11 +335,11 @@ const Tree = (() => {
       const res = await fetch(`/api/nodes/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || '删除失败');
+        showToast(data.error || '删除失败', 'error');
         return;
       }
-      if (selectedId === id) {
-        selectedId = null;
+      if (activeId === id) {
+        activeId = null;
         if (typeof WikiEditor !== 'undefined') WikiEditor.showPlaceholder();
       }
       selectedIds.delete(id);
@@ -382,9 +368,12 @@ const Tree = (() => {
         });
         if (!res.ok) {
           const data = await res.json();
-          alert(data.error || '导入失败');
+          showToast(data.error || '导入失败', 'error');
           return;
         }
+        const newNode = await res.json();
+        // Set pending select so after loadTree, the new node gets selected
+        pendingSelectId = newNode.id;
         await loadTree();
         showToast('文章导入成功', 'success');
       } catch (e) {
@@ -394,21 +383,128 @@ const Tree = (() => {
     input.click();
   }
 
+  function renameNodeById(id) {
+    const node = allNodes.find(n => n.id === id);
+    if (!node) return;
+    const dialog = document.getElementById('rename-dialog');
+    const input = document.getElementById('rename-input');
+    input.value = node.title;
+    dialog.style.display = 'flex';
+    dialog.dataset.nodeId = id;
+    input.focus();
+    input.select();
+  }
+
+  async function renameNode(id, newTitle) {
+    try {
+      const res = await fetch(`/api/nodes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        showToast(data.error || '重命名失败', 'error');
+        return;
+      }
+      await loadTree();
+      showToast('重命名成功', 'success');
+    } catch (e) {
+      showToast('重命名失败', 'error');
+    }
+  }
+
+  // ─── Context Menu Action Dispatcher ───
+
+  function handleContextAction(action) {
+    const id = contextNodeId;
+    document.getElementById('context-menu').style.display = 'none';
+
+    switch (action) {
+      case 'add-child':
+        addNode(id, 'article');
+        break;
+      case 'import':
+        importMarkdown(id);
+        break;
+      case 'rename':
+        renameNodeById(id);
+        break;
+      case 'delete':
+        deleteNode(id);
+        break;
+      case 'batch-authorize':
+        if (typeof App !== 'undefined' && App.openBatchAuthDialog) {
+          App.openBatchAuthDialog('grant');
+        }
+        break;
+      case 'batch-revoke':
+        if (typeof App !== 'undefined' && App.openBatchAuthDialog) {
+          App.openBatchAuthDialog('revoke');
+        }
+        break;
+      case 'transfer':
+        if (typeof App !== 'undefined' && App.openTransferDialog) {
+          App.openTransferDialog();
+        }
+        break;
+    }
+  }
+
+  function handleEmptyContextAction(action) {
+    document.getElementById('empty-context-menu').style.display = 'none';
+    switch (action) {
+      case 'add-root':
+        addNode(null, 'document');
+        break;
+    }
+  }
+
+  // Bind context menu actions
+  document.querySelectorAll('#context-menu .context-menu-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = item.dataset.action;
+      if (action) handleContextAction(action);
+    });
+  });
+
+  document.querySelectorAll('#empty-context-menu .context-menu-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = item.dataset.action;
+      if (action) handleEmptyContextAction(action);
+    });
+  });
+
+  // ─── Public helpers for auth integration ───
+
+  function setCurrentUserId(id) {
+    currentUserId = id;
+  }
+
+  function resetCurrentUserId() {
+    currentUserId = null;
+  }
+
   // ─── Load ───
 
   async function loadTree() {
     try {
-      treeData = await fetchTree();
-      allNodes = await fetchFlat();
+      const data = await fetchTree();
+      allNodes = data;
+      treeData = buildTree(data, null);
 
-      // Fetch current user ID
-      try {
-        const userRes = await fetch('/api/auth/me');
-        if (userRes.ok) {
-          const user = await userRes.json();
-          currentUserId = user.id;
-        }
-      } catch (_) {}
+      // Get current user ID if not already set
+      if (!currentUserId) {
+        try {
+          const userRes = await fetch('/api/auth/me');
+          if (userRes.ok) {
+            const user = await userRes.json();
+            currentUserId = user.id;
+          }
+        } catch (_) {}
+      }
 
       renderTree();
     } catch (e) {
@@ -427,5 +523,18 @@ const Tree = (() => {
     }, 300);
   });
 
-  return { loadTree, selectNode, getSelectedIds: () => [...selectedIds], countDescendants };
+  return {
+    loadTree,
+    selectNode,
+    getSelectedIds: () => [...selectedIds],
+    getActiveId: () => activeId,
+    getAllNodes: () => [...allNodes],
+    getCurrentUserId: () => currentUserId,
+    countDescendants,
+    addNode,
+    deleteNode,
+    renameNode,
+    setCurrentUserId,
+    resetCurrentUserId,
+  };
 })();
