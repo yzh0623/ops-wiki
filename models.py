@@ -1,4 +1,10 @@
-"""Ops Wiki — SQLAlchemy database models."""
+'''
+Author: yuanzhenhui 
+Date: 2026-06-02 08:36:09
+LastEditors: yuanzhenhui 
+LastEditTime: 2026-06-02 16:55:46
+FilePath: /ops_wiki/models.py
+'''
 
 from datetime import datetime
 
@@ -8,8 +14,8 @@ from flask_login import UserMixin
 from extensions import db
 
 
+# 用户账号模型
 class User(db.Model, UserMixin):
-    """User account model."""
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -21,20 +27,20 @@ class User(db.Model, UserMixin):
     rsa_private_key = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # 密码哈希存储
     def set_password(self, password: str) -> None:
-        """Hash and store the given password."""
         self.password_hash = generate_password_hash(password)
 
+    # 验证密码是否匹配
     def check_password(self, password: str) -> bool:
-        """Compare the given password against the stored hash."""
         return check_password_hash(self.password_hash, password)
 
     def __repr__(self) -> str:
         return f'<User {self.email}>'
 
 
+# wiki 页面树节点，支持无限层级
 class Node(db.Model):
-    """Hierarchical wiki page node."""
 
     id = db.Column(db.Integer, primary_key=True)
     parent_id = db.Column(
@@ -47,7 +53,7 @@ class Node(db.Model):
     content = db.Column(db.Text, default='')
     type = db.Column(db.String(20), default='document')
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
-    encrypted_key = db.Column(db.Text, nullable=True)  # AES key encrypted with owner's RSA pubkey (base64), None=legacy plaintext
+    encrypted_key = db.Column(db.Text, nullable=True)  # AES密钥用所有者RSA公钥加密(base64)，None=旧数据明文
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
@@ -68,8 +74,8 @@ class Node(db.Model):
         return f'<Node {self.title}>'
 
 
+# 节点权限授权/回收记录
 class NodePermission(db.Model):
-    """Records access grants/revokes for wiki nodes."""
 
     __tablename__ = 'node_permission'
 
@@ -77,7 +83,7 @@ class NodePermission(db.Model):
     node_id = db.Column(db.Integer, db.ForeignKey('node.id', ondelete='CASCADE'), nullable=False, index=True)
     grantor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     grantee_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
-    is_active = db.Column(db.Boolean, default=True)  # True=grant, False=revoke
+    is_active = db.Column(db.Boolean, default=True)  # True=授权, False=回收
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (

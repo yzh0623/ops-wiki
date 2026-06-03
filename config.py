@@ -1,14 +1,13 @@
 '''
-Author: yuanzhenhui yuanzhenhui@paohe.cn
+Author: yuanzhenhui 
 Date: 2026-06-02 08:36:08
-LastEditors: yuanzhenhui yuanzhenhui@paohe.cn
-LastEditTime: 2026-06-03 10:18:41
+LastEditors: yuanzhenhui 
+LastEditTime: 2026-06-03 17:40:51
 FilePath: /ops_wiki/config.py
-Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 '''
 import os
 
-# Root directory: the directory containing config.py (project root)
+# 项目根目录
 _basedir = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -20,7 +19,7 @@ class Config:
         "connect_args": {"timeout": 5}
     }
 
-    # SMTP email notifications (optional — leave empty to disable)
+    # SMTP 邮件通知配置（留空则禁用）
     MAIL_SERVER = os.environ.get('MAIL_SERVER', '')
     MAIL_PORT = int(os.environ.get('MAIL_PORT', '587'))
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME', '')

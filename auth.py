@@ -1,9 +1,15 @@
-"""Ops Wiki — authentication blueprint (register, login, logout, me)."""
+'''
+Author: yuanzhenhui 
+Date: 2026-06-02 08:36:09
+LastEditors: yuanzhenhui 
+LastEditTime: 2026-06-03 17:40:46
+FilePath: /ops_wiki/auth.py
+'''
 
 import re
 
 from flask import Blueprint, request, jsonify
-from flask_login import login_user, logout_user, login_required, current_user
+from flask_login import login_user, logout_user, current_user
 
 from extensions import db
 from models import User
@@ -14,6 +20,7 @@ auth_bp = Blueprint('auth', __name__)
 _EMAIL_RE = re.compile(r'.+@.+\..+')
 
 
+# 把 user 对象转成字典，统一接口返回格式
 def _user_dict(user: User) -> dict:
     return {
         'id': user.id,
@@ -24,6 +31,7 @@ def _user_dict(user: User) -> dict:
     }
 
 
+# 新用户注册
 @auth_bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json(force=True)
@@ -52,7 +60,7 @@ def register():
     user.is_active = True if is_first_user else False
     user.is_admin = True if is_first_user else False
 
-    # Generate RSA key pair for this user
+    # 为新用户生成 RSA 密钥对
     private_pem, public_pem = generate_key_pair()
     user.rsa_public_key = public_pem
     user.rsa_private_key = private_pem
@@ -63,6 +71,7 @@ def register():
     return jsonify({**_user_dict(user), 'message': '注册成功'}), 201
 
 
+# 用户登录
 @auth_bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json(force=True)
@@ -84,6 +93,7 @@ def login():
     return jsonify(_user_dict(user)), 200
 
 
+# 登出，清除 session 和 cookie
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
     from flask import session
@@ -94,6 +104,7 @@ def logout():
     return resp, 200
 
 
+# 获取当前登录用户信息
 @auth_bp.route('/me', methods=['GET'])
 def me():
     if not current_user.is_authenticated:

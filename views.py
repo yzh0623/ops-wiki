@@ -1,8 +1,18 @@
-"""Ops Wiki — wiki node API blueprint (CRUD, tree, import, search)."""
+'''
+Author: yuanzhenhui 
+Date: 2026-06-03 16:12:27
+LastEditors: yuanzhenhui 
+LastEditTime: 2026-06-03 17:44:25
+FilePath: /ops_wiki/views.py
+'''
+
+# ops_wiki - 主要 API 视图
 
 from __future__ import annotations
 
 import logging
+import os
+import uuid
 
 from flask import Blueprint, request, jsonify
 
@@ -16,10 +26,14 @@ from email_utils import send_notification
 
 views_bp = Blueprint('views', __name__)
 
+# Word 文档图片提取目录
+IMAGES_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'images')
+os.makedirs(IMAGES_DIR, exist_ok=True)
+
 
 @views_bp.record_once
+# 注册 SPA 根路由
 def _register_root_route(state):
-    """Register the SPA root route directly on the Flask app."""
     from flask import render_template
 
     @state.app.route('/')
@@ -27,6 +41,7 @@ def _register_root_route(state):
         return render_template('index.html')
 
 
+# 把 Node 对象转成字典格式
 def _node_dict(node: Node) -> dict:
     return {
         'id': node.id,
@@ -40,8 +55,8 @@ def _node_dict(node: Node) -> dict:
     }
 
 
+# 递归构建树形结构
 def _build_tree(nodes: list[Node], parent_id: int | None = None) -> list[dict]:
-    """Recursively build nested tree from flat node list."""
     result = []
     for node in nodes:
         if node.parent_id == parent_id:
@@ -52,8 +67,8 @@ def _build_tree(nodes: list[Node], parent_id: int | None = None) -> list[dict]:
     return result
 
 
+# 递归收集所有后代节点 ID
 def _get_subtree_ids(parent_id: int) -> list[int]:
-    """Collect all descendant node IDs recursively."""
     ids: list[int] = []
     children = Node.query.filter_by(parent_id=parent_id).all()
     for child in children:
@@ -64,6 +79,7 @@ def _get_subtree_ids(parent_id: int) -> list[int]:
 
 @views_bp.route('/nodes', methods=['POST'])
 @login_required
+# 创建新节点（文档或文章）
 def create_node():
     data = request.get_json(force=True)
     title = (data.get('title') or '').strip()
@@ -99,6 +115,7 @@ def create_node():
         owner_id=current_user.id,
     )
 
+    # article 类型的内容用 RSA 混合加密存储
     if type_ == 'article' and content and current_user.rsa_public_key:
         enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
         node.content = enc_content
@@ -109,6 +126,7 @@ def create_node():
     return jsonify(_node_dict(node)), 201
 
 
+# 判断用户是否有权限访问该节点
 def _can_access(node: Node, user: User) -> bool:
     if node.owner_id is None:
         return True
@@ -122,6 +140,7 @@ def _can_access(node: Node, user: User) -> bool:
 
 @views_bp.route('/nodes/<int:node_id>', methods=['GET'])
 @login_required
+# 获取单个节点的详细信息
 def get_node(node_id):
     node = Node.query.get_or_404(node_id)
     data = _node_dict(node)
@@ -129,6 +148,7 @@ def get_node(node_id):
     if not _can_access(node, current_user):
         return jsonify({'error': '无权访问此节点'}), 404
 
+    # 加密内容需要用所有者的私钥解密
     if node.encrypted_key:
         try:
             owner = User.query.get(node.owner_id) if node.owner_id else current_user
@@ -143,7 +163,7 @@ def get_node(node_id):
     data['owner_id'] = node.owner_id
     data['is_owner'] = (node.owner_id == current_user.id)
 
-    # Include grantees (users with active access)
+    # 查出有访问权限的用户列表
     grantees = NodePerm.query.filter_by(node_id=node.id, is_active=True).all()
     grantee_list = []
     for g in grantees:
@@ -157,6 +177,7 @@ def get_node(node_id):
 
 @views_bp.route('/nodes/<int:node_id>', methods=['PUT'])
 @login_required
+# 更新节点标题或内容
 def update_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -171,6 +192,7 @@ def update_node(node_id):
         node.title = title
     if 'content' in data:
         plaintext = data['content'] or ''
+        # 有公钥的文章内容先加密再存
         if node.type == 'article' and plaintext and current_user.rsa_public_key:
             enc_content, enc_key = encrypt_content(plaintext, current_user.rsa_public_key)
             node.content = enc_content
@@ -193,22 +215,23 @@ def update_node(node_id):
 
 @views_bp.route('/nodes', methods=['GET'])
 @login_required
+# 返回节点树或平铺列表
 def list_nodes():
     flat = request.args.get('flat', '').lower() == 'true'
 
-    # All users (including admin) only see owned + authorized nodes
+    # 只查自己拥有的 + 被授权访问的节点
     authorized_ids = set(
         r[0] for r in
         NodePerm.query.filter_by(grantee_id=current_user.id, is_active=True)
         .with_entities(NodePerm.node_id)
         .all()
     )
-    # Owned nodes + authorized nodes
+    # 自己的节点 + 被授权的节点
     all_nodes = Node.query.filter(
         db.or_(Node.owner_id == current_user.id, Node.id.in_(authorized_ids))
     ).order_by(Node.sort_order, Node.created_at).all()
 
-    # Also include parent chain for authorized nodes so the tree can display properly
+    # 把授权节点的父级链也补上，保证树能正常展示
     parent_ids = set()
     for node in all_nodes:
         pid = node.parent_id
@@ -219,272 +242,424 @@ def list_nodes():
                 pid = parent_node.parent_id
             else:
                 break
-
     if parent_ids:
+        chain_nodes = Node.query.filter(
+            Node.id.in_(parent_ids)
+        ).order_by(Node.sort_order, Node.created_at).all()
         existing_ids = {n.id for n in all_nodes}
-        extra_nodes = Node.query.filter(Node.id.in_(parent_ids - existing_ids)).all()
-        all_nodes = sorted(all_nodes + extra_nodes, key=lambda n: (n.sort_order, n.created_at))
+        for cn in chain_nodes:
+            if cn.id not in existing_ids:
+                all_nodes.append(cn)
 
     if flat:
         return jsonify({'nodes': [_node_dict(n) for n in all_nodes]}), 200
 
-    tree = _build_tree(all_nodes)
+    root_nodes = [n for n in all_nodes if n.parent_id is None]
+    tree = _build_tree(root_nodes)
     return jsonify({'nodes': tree}), 200
 
 
 @views_bp.route('/nodes/<int:node_id>', methods=['DELETE'])
 @login_required
+# 删除节点及其所有子节点
 def delete_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
-        return jsonify({'error': '只有所有者才能删除此节点'}), 403
+        return jsonify({'error': '无权删除此节点'}), 403
 
-    child_count = Node.query.filter_by(parent_id=node_id).count()
-    # Move children up, appending after existing siblings
-    max_sibling_order = db.session.query(db.func.max(Node.sort_order)).filter(
-        Node.parent_id == node.parent_id
-    ).scalar() or 0
-    children = Node.query.filter_by(parent_id=node_id).order_by(Node.sort_order).all()
-    for idx, child in enumerate(children):
-        child.parent_id = node.parent_id
-        child.sort_order = max_sibling_order + idx + 1
+    # 如果节点是根级别的 article 类型，需要特殊处理（防止所有根节点都是 article）
+    if node.parent_id is None and node.type == 'article':
+        if node.type != 'document':
+            node.type = 'document'
+
+    # 找到所有子节点并按 sort_order 排序
+    children = Node.query.filter_by(parent_id=node.parent_id).order_by(Node.sort_order).all()
+    sibling_count = 0
+    for child in children:
+        if child.parent_id == node.parent_id:
+            sibling_count += 1
+
+    # 收集所有后代节点 ID
+    subtree_ids = _get_subtree_ids(node.id)
+
+    # 删除节点及其所有子节点的权限记录
+    all_ids = [node.id] + subtree_ids
+    NodePerm.query.filter(NodePerm.node_id.in_(all_ids)).delete(synchronize_session=False)
+
+    # 删除所有子节点
+    Node.query.filter(Node.id.in_(subtree_ids)).delete(synchronize_session=False)
+
+    # 更新兄弟节点的 sort_order（把后面的节点往前移）
+    if node.parent_id is not None:
+        siblings = Node.query.filter(
+            Node.parent_id == node.parent_id,
+            Node.sort_order > node.sort_order
+        ).order_by(Node.sort_order).all()
+        for sibling in siblings:
+            sibling.sort_order -= 1
 
     db.session.delete(node)
     db.session.commit()
-    return jsonify({
-        'message': f'节点已删除，{child_count} 个子节点已上移'
-    }), 200
+
+    return jsonify({'message': f'节点已删除，{sibling_count} 个子节点已上移'}), 200
+
+
+@views_bp.route('/nodes/<int:node_id>/move', methods=['PUT'])
+@login_required
+# 移动节点到新的父节点下
+def move_node(node_id):
+    node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '无权操作此节点'}), 403
+
+    data = request.get_json(force=True)
+    new_parent_id = data.get('parent_id')
+
+    # 检查是否形成循环引用
+    if new_parent_id == node.id:
+        return jsonify({'error': '不能移动到自身'}), 400
+    if new_parent_id is not None:
+        subtree_ids = _get_subtree_ids(node.id)
+        if new_parent_id in subtree_ids:
+            return jsonify({'error': '不能移动到子节点下'}), 400
+
+    node.parent_id = new_parent_id
+    db.session.commit()
+    return jsonify(_node_dict(node)), 200
+
+
+@views_bp.route('/nodes/<int:node_id>/rename', methods=['PUT'])
+@login_required
+# 重命名节点标题
+def rename_node(node_id):
+    node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '无权操作此节点'}), 403
+
+    data = request.get_json(force=True)
+    new_title = (data.get('title') or '').strip()
+    if not new_title:
+        return jsonify({'error': '标题不能为空'}), 400
+    if new_title == node.title:
+        return jsonify(_node_dict(node)), 200
+
+    node.title = new_title
+    db.session.commit()
+    return jsonify(_node_dict(node)), 200
+
+
+@views_bp.route('/nodes/search', methods=['GET'])
+@login_required
+# 按标题关键词搜索节点
+def search_nodes():
+    q = (request.args.get('q') or '').strip()
+    type_filter = (request.args.get('type') or '').strip()
+    if not q:
+        return jsonify({'nodes': []}), 200
+
+    # 只搜索用户有权限访问的节点
+    authorized_ids = set(
+        r[0] for r in
+        NodePerm.query.filter_by(grantee_id=current_user.id, is_active=True)
+        .with_entities(NodePerm.node_id)
+        .all()
+    )
+    query = Node.query.filter(
+        db.or_(Node.owner_id == current_user.id, Node.id.in_(authorized_ids)),
+        Node.title.contains(q),
+    )
+    if type_filter in ('document', 'article'):
+        query = query.filter(Node.type == type_filter)
+
+    nodes = query.order_by(Node.sort_order, Node.created_at).all()
+    return jsonify({'nodes': [_node_dict(n) for n in nodes]}), 200
 
 
 @views_bp.route('/nodes/<int:node_id>/share', methods=['POST'])
 @login_required
+# 把节点分享给其他用户
 def share_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
-        return jsonify({'error': '只有文章所有者才能分享'}), 403
+        return jsonify({'error': '只有所有者才能分享此节点'}), 403
 
     data = request.get_json(force=True)
-    user_ids = data.get('user_ids', [])
-    recursive = data.get('recursive', False) or request.args.get('recursive') == 'true'
+    grantee_id = data.get('grantee_id')
 
-    if not user_ids:
-        return jsonify({'error': '未提供用户列表'}), 400
+    grantee = User.query.get(grantee_id)
+    if not grantee or not grantee.is_active:
+        return jsonify({'error': '用户不存在或未激活'}), 404
 
-    node_ids = [node_id]
-    skipped = 0
-    if recursive:
-        subtree = _get_subtree_ids(node_id)
-        node_ids.extend(subtree)
+    # 检查是否已有活跃的分享记录
+    existing = NodePerm.query.filter_by(
+        node_id=node.id, grantee_id=grantee_id
+    ).first()
 
-    count = 0
-    for nid in node_ids:
-        n = Node.query.get(nid)
-        if not n or n.owner_id != current_user.id:
-            skipped += 1
-            continue
-        for uid in user_ids:
-            existing = NodePerm.query.filter_by(node_id=nid, grantee_id=uid).first()
-            if existing:
-                if not existing.is_active:
-                    existing.is_active = True
-                    count += 1
-                continue
-            perm = NodePerm(
-                node_id=nid,
-                grantor_id=current_user.id,
-                grantee_id=uid,
-                is_active=True,
-            )
-            db.session.add(perm)
-            count += 1
-    db.session.commit()
+    if existing and existing.is_active:
+        return jsonify({'error': '该用户已有访问权限'}), 409
 
-    if count > 0:
-        grantor_name = current_user.nickname or current_user.email
-        for uid in user_ids:
-            grantee = User.query.get(uid)
-            if grantee and grantee.email:
-                titles = []
-                for nid in node_ids:
-                    n = Node.query.get(nid)
-                    if n:
-                        titles.append(n.title)
-                body = f'用户 {grantor_name} 已对您进行了以下文章的授权：\n'
-                body += '\n'.join(f'  - {t}' for t in titles[:20])
-                if len(titles) > 20:
-                    body += f'\n  ...等 {len(titles)} 篇文章'
-                body += '\n\n请登录 Ops Wiki 查看。'
-                send_notification(grantee.email, 'Ops Wiki - 权限变更通知', body)
+    if not grantee.rsa_public_key:
+        return jsonify({'error': '该用户暂未生成加密密钥'}), 400
 
-    return jsonify({
-        'message': f'已授权 {count} 项权限' + (f'（跳过 {skipped} 个非自有节点）' if skipped else ''),
-        'count': count,
-        'skipped': skipped,
-    }), 200
+    # 先解密再重新加密（用所有者的私钥解密原文）
+    content_plain = node.content
+    if node.encrypted_key and node.owner_id:
+        owner = User.query.get(node.owner_id)
+        if owner:
+            try:
+                content_plain = decrypt_content(node.content, node.encrypted_key, owner.rsa_private_key)
+            except Exception as e:
+                logger.exception('Decryption failed for node %d during share', node.id)
+                return jsonify({'error': '解密内容失败'}), 500
+
+    if existing:
+        existing.is_active = True
+        db.session.commit()
+    else:
+        perm = NodePerm(node_id=node.id, grantor_id=current_user.id, grantee_id=grantee_id)
+        db.session.add(perm)
+        db.session.commit()
+
+    # 发送邮件通知被分享者
+    send_notification(
+        to_email=grantee.email,
+        subject=f'{current_user.nickname} 分享了文档《{node.title}》给你',
+        body=f'用户 {current_user.nickname} 将文档《{node.title}》分享给了你，请登录查看。',
+    )
+
+    return jsonify({'message': f'已将「{node.title}」分享给 {grantee.nickname}！'}), 200
 
 
-@views_bp.route('/nodes/batch-authorize', methods=['POST'])
+@views_bp.route('/nodes/<int:node_id>/share/<int:grantee_id>', methods=['DELETE'])
 @login_required
-def batch_authorize():
-    data = request.get_json(force=True)
-    node_ids = data.get('node_ids', [])
-    user_ids = data.get('user_ids', [])
-    is_active = data.get('is_active', True)
-    recursive = data.get('recursive', False)
-
-    if not node_ids or not user_ids:
-        return jsonify({'error': '未提供节点或用户列表'}), 400
-
-    if recursive:
-        expanded_ids = list(node_ids)
-        for nid in node_ids:
-            expanded_ids.extend(_get_subtree_ids(nid))
-        node_ids = list(dict.fromkeys(expanded_ids))  # deduplicate preserving order
-
-    nodes = Node.query.filter(Node.id.in_(node_ids)).all()
-    authorized = 0
-    for node in nodes:
-        if node.owner_id != current_user.id:
-            continue
-        for uid in user_ids:
-            existing = NodePerm.query.filter_by(node_id=node.id, grantee_id=uid).first()
-            if existing:
-                if existing.is_active != is_active:
-                    existing.is_active = is_active
-                    authorized += 1
-                continue
-            perm = NodePerm(
-                node_id=node.id,
-                grantor_id=current_user.id,
-                grantee_id=uid,
-                is_active=is_active,
-            )
-            db.session.add(perm)
-            authorized += 1
-    db.session.commit()
-
-    if authorized > 0:
-        grantor_name = current_user.nickname or current_user.email
-        for uid in user_ids:
-            grantee = User.query.get(uid)
-            if grantee and grantee.email:
-                titles = [n.title for n in nodes if n]
-                if is_active:
-                    body = f'用户 {grantor_name} 已对您进行了以下文章的授权：\n'
-                    body += '\n'.join(f'  - {t}' for t in titles[:20])
-                    if len(titles) > 20:
-                        body += f'\n  ...等 {len(titles)} 篇文章'
-                    subj = 'Ops Wiki - 权限变更通知'
-                else:
-                    body = f'用户 {grantor_name} 已撤销您对以下文章的访问权限：\n'
-                    body += '\n'.join(f'  - {t}' for t in titles[:20])
-                    if len(titles) > 20:
-                        body += f'\n  ...等 {len(titles)} 篇文章'
-                    subj = 'Ops Wiki - 权限撤销通知'
-                body += '\n\n请登录 Ops Wiki 查看。'
-                send_notification(grantee.email, subj, body)
-
-    action = '授权' if is_active else '撤销'
-    return jsonify({'message': f'已{action} {authorized} 项权限'}), 200
-
-
-@views_bp.route('/nodes/<int:node_id>/transfer', methods=['POST'])
-@login_required
-def transfer_node(node_id):
+# 取消分享，收回访问权限
+def revoke_share(node_id, grantee_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
-        return jsonify({'error': '只有文章所有者才能转让'}), 403
+        return jsonify({'error': '只有所有者才能取消分享'}), 403
 
+    perm = NodePerm.query.filter_by(
+        node_id=node.id, grantee_id=grantee_id
+    ).first()
+    if not perm or not perm.is_active:
+        return jsonify({'error': '该用户没有访问权限'}), 404
+
+    perm.is_active = False
+    db.session.commit()
+    return jsonify({'message': '已取消分享'}), 200
+
+
+@views_bp.route('/nodes/import/batch', methods=['POST'])
+@login_required
+# 批量导入 JSON 格式的节点数据
+def batch_import():
     data = request.get_json(force=True)
-    new_owner_id = data.get('new_owner_id')
-    recursive = data.get('recursive', False)
+    nodes_data = data.get('nodes', [])
+    if not nodes_data:
+        return jsonify({'error': '没有可导入的数据'}), 400
 
-    if not new_owner_id:
-        return jsonify({'error': '未指定新所有者'}), 400
+    created = 0
+    for item in nodes_data:
+        title = item.get('title', '').strip()
+        parent_id = item.get('parent_id')
+        type_ = item.get('type', 'document')
+        content = item.get('content', '')
 
-    new_owner = User.query.get(new_owner_id)
-    if not new_owner:
-        return jsonify({'error': '目标用户不存在'}), 404
-    if not new_owner.is_active:
-        return jsonify({'error': '目标用户未激活'}), 400
-
-    node_ids = [node_id]
-    if recursive:
-        node_ids.extend(_get_subtree_ids(node_id))
-
-    transferred = 0
-    node_cache = {}
-    for nid in node_ids:
-        n = node_cache.get(nid) or Node.query.get(nid)
-        if not n or n.owner_id != current_user.id:
+        if not title:
             continue
-        node_cache[nid] = n
 
-        plaintext = ''
-        if n.encrypted_key and current_user.rsa_private_key:
-            try:
-                plaintext = decrypt_content(n.content, n.encrypted_key, current_user.rsa_private_key)
-            except Exception as e:
-                logger.warning('Decryption failed for node %d during transfer — skipping', n.id)
-                continue
-        else:
-            plaintext = n.content
+        node = Node(
+            title=title,
+            parent_id=parent_id if parent_id else None,
+            type=type_,
+            content=content,
+            owner_id=current_user.id,
+        )
+        # 导入时如果有公钥也做加密
+        if content and current_user.rsa_public_key:
+            enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
+            node.content = enc_content
+            node.encrypted_key = enc_key
 
-        if plaintext and new_owner.rsa_public_key:
-            enc_content, enc_key = encrypt_content(plaintext, new_owner.rsa_public_key)
-            n.content = enc_content
-            n.encrypted_key = enc_key
-
-        n.owner_id = new_owner_id
-        transferred += 1
+        db.session.add(node)
+        created += 1
 
     db.session.commit()
-
-    if transferred > 0:
-        grantor_name = current_user.nickname or current_user.email
-        titles = [node_cache[nid].title for nid in node_ids if nid in node_cache and node_cache[nid]]
-        body = f'用户 {grantor_name} 已将以下文章的所有权转让给您：\n'
-        body += '\n'.join(f'  - {t}' for t in titles[:20])
-        if len(titles) > 20:
-            body += f'\n  ...等 {len(titles)} 篇文章'
-        body += '\n\n请登录 Ops Wiki 查看。'
-        send_notification(new_owner.email, 'Ops Wiki - 所有权转让通知', body)
-
-    return jsonify({'message': f'已转让 {transferred} 个节点'}), 200
+    return jsonify({'message': f'成功导入 {created} 个节点'}), 201
 
 
-ALLOWED_EXTENSIONS = {'.md'}
-MAX_CONTENT_LENGTH = 10 * 1024 * 1024
-
-
-@views_bp.route('/nodes/<int:node_id>/import', methods=['POST'])
+@views_bp.route('/nodes/import/file', methods=['POST'])
 @login_required
-def import_markdown(node_id):
-    parent = Node.query.get_or_404(node_id)
+# 上传文件并导入为新节点
+def import_file():
+    parent_id = request.form.get('parent_id', type=int)
+    parent = None
+    if parent_id:
+        parent = Node.query.get(parent_id)
+        if not parent:
+            return jsonify({'error': '目标节点不存在'}), 404
+        if parent.owner_id != current_user.id:
+            return jsonify({'error': '只能导入到自己的节点下'}), 403
+    elif parent_id == 0:
+        parent_id = None
 
-    if 'file' not in request.files:
-        return jsonify({'error': '未提供文件'}), 400
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': '请选择文件'}), 400
 
-    file = request.files['file']
-    if not file.filename:
-        return jsonify({'error': '文件名为空'}), 400
+    filename = (file.filename or 'unnamed').strip()
+    ext = os.path.splitext(filename)[1].lower()
 
-    ext = '.' + file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
-    if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({'error': '仅支持 .md 文件'}), 400
+    # 处理纯文本文件
+    if ext in ('.txt', '.md', '.markdown', '.py', '.js', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.log', '.csv', '.tsv', '.sql', '.sh', '.bat', '.rst', '.tex'):
+        try:
+            content = file.read().decode('utf-8')
+        except UnicodeDecodeError:
+            content = file.read().decode('latin-1')
+        title = filename.rsplit('.', 1)[0]
+        file.seek(0)
 
-    file.seek(0, 2)
-    size = file.tell()
-    if size > MAX_CONTENT_LENGTH:
-        return jsonify({'error': '文件大小超过 10MB 限制'}), 413
+        node = Node(
+            title=title,
+            parent_id=parent_id,
+            type='article',
+            content=content,
+            owner_id=current_user.id,
+        )
+        if content and current_user.rsa_public_key:
+            enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
+            node.content = enc_content
+            node.encrypted_key = enc_key
+
+        db.session.add(node)
+        db.session.commit()
+        return jsonify(_node_dict(node)), 201
+
+    # 处理 Word 文档
+    if ext == '.docx':
+        return _import_docx(file, parent_id if parent else None)
+
+    # 处理 Excel 文件
+    if ext in ('.xlsx', '.xlsm'):
+        return _import_excel(file, parent_id if parent else None)
+
+    return jsonify({'error': f'不支持的文件格式: {ext}'}), 400
+
+
+# 导入 Word 文档并转成 Markdown
+def _import_docx(file, parent_id):
+    try:
+        import docx  # type: ignore
+    except ImportError:
+        return jsonify({'error': '服务器未安装 python-docx'}), 500
+
+    try:
+        doc = docx.Document(file)
+    except Exception:
+        return jsonify({'error': '无法解析该 Word 文档'}), 400
+
+    md_parts = []
+    for para in doc.paragraphs:
+        style = para.style.name if para.style else ''
+        text = para.text.strip()
+        if not text:
+            md_parts.append('')
+            continue
+        if 'Heading 1' in style:
+            md_parts.append(f'# {text}')
+        elif 'Heading 2' in style:
+            md_parts.append(f'## {text}')
+        elif 'Heading 3' in style:
+            md_parts.append(f'### {text}')
+        elif 'Heading 4' in style:
+            md_parts.append(f'#### {text}')
+        else:
+            md_parts.append(text)
+
+    # 从文档关系中提取图片
+    for i, rel in enumerate(doc.part.rels.values()):
+        if 'image' in rel.reltype:
+            try:
+                img = rel.target_part
+                img_bytes = img.blob
+                ext = os.path.splitext(img.partname)[1]
+                if not ext:
+                    ext = '.png'
+                img_name = f'import_{uuid.uuid4().hex}{ext}'
+                img_path = os.path.join(IMAGES_DIR, img_name)
+                with open(img_path, 'wb') as f:
+                    f.write(img_bytes)
+                md_parts.append(f'![image](images/{img_name})')
+            except Exception:
+                pass
+
+    content = '\n'.join(md_parts)
+    title = file.filename.rsplit('.', 1)[0] if hasattr(file, 'filename') else '导入文档'
     file.seek(0)
 
-    content = file.read().decode('utf-8', errors='replace')
+    parent_node = None
+    if parent_id:
+        parent_node = Node.query.get(parent_id)
+
+    node = Node(
+        title=title,
+        parent_id=parent_id,
+        type='article',
+        content=content,
+        owner_id=current_user.id,
+    )
+    if content and current_user.rsa_public_key:
+        enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
+        node.content = enc_content
+        node.encrypted_key = enc_key
+
+    db.session.add(node)
+    db.session.commit()
+    return jsonify(_node_dict(node)), 201
+
+
+# 导入 Excel 文件并转成 Markdown 表格
+def _import_excel(file, parent_id):
+    try:
+        import openpyxl  # type: ignore
+    except ImportError:
+        return jsonify({'error': '服务器未安装 openpyxl'}), 500
+
+    try:
+        wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
+    except Exception:
+        return jsonify({'error': '无法解析该 Excel 文件'}), 400
+
+    md_parts = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        md_parts.append(f'## {sheet_name}\n')
+
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            md_parts.append('*(空表格)*\n')
+            continue
+
+        # 第一行作为表头
+        header = rows[0]
+        md_parts.append('| ' + ' | '.join(str(c or '') for c in header) + ' |')
+        md_parts.append('| ' + ' | '.join('---' for _ in header) + ' |')
+
+        # 数据行
+        for row in rows[1:]:
+            # 行列对齐，补足长度
+            cells = list(row) + [None] * (len(header) - len(row))
+            md_parts.append('| ' + ' | '.join(str(c or '') for c in cells[:len(header)]) + ' |')
+
+        md_parts.append('')
+
+    wb.close()
+    content = '\n'.join(md_parts)
     title = file.filename.rsplit('.', 1)[0]
 
     node = Node(
         title=title,
-        parent_id=parent.id,
+        parent_id=parent_id,
         type='article',
         content=content,
         owner_id=current_user.id,
@@ -500,23 +675,10 @@ def import_markdown(node_id):
     return jsonify(_node_dict(node)), 201
 
 
-@views_bp.route('/nodes/search', methods=['GET'])
-@login_required
-def search_nodes():
-    q = (request.args.get('q') or '').strip()
-    if not q:
-        return jsonify({'nodes': []}), 200
-
-    results = Node.query.filter(Node.title.ilike(f'%{q}%')).order_by(
-        Node.sort_order, Node.created_at
-    ).all()
-    return jsonify({'nodes': [_node_dict(n) for n in results]}), 200
-
-
 @views_bp.route('/users', methods=['GET'])
 @login_required
+# 列出可分享的用户（排除自己）
 def list_users():
-    """List active users (excluding current user) for sharing purposes."""
     users = User.query.filter(
         User.is_active == True, User.id != current_user.id
     ).order_by(User.nickname).all()

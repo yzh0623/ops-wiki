@@ -12,6 +12,38 @@ const Tree = (() => {
 
   const TREE_CONTAINER = document.getElementById('tree-container');
   const SEARCH_INPUT = document.getElementById('search-tree');
+  const SIDEBAR = document.getElementById('sidebar');
+  const SIDEBAR_DIVIDER = document.getElementById('sidebar-divider');
+
+  // ─── Sidebar Drag Resize ───
+  let isSidebarDragging = false;
+
+  SIDEBAR_DIVIDER.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    isSidebarDragging = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const overlay = document.createElement('div');
+    overlay.id = 'sidebar-drag-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;cursor:col-resize;';
+    document.body.appendChild(overlay);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isSidebarDragging) return;
+    const newWidth = Math.max(180, Math.min(600, e.clientX));
+    SIDEBAR.style.width = newWidth + 'px';
+    SIDEBAR.style.minWidth = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isSidebarDragging) return;
+    isSidebarDragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    const overlay = document.getElementById('sidebar-drag-overlay');
+    if (overlay) overlay.remove();
+  });
 
   // ─── API Calls ───
 
@@ -372,10 +404,73 @@ const Tree = (() => {
           return;
         }
         const newNode = await res.json();
-        // Set pending select so after loadTree, the new node gets selected
         pendingSelectId = newNode.id;
         await loadTree();
         showToast('文章导入成功', 'success');
+      } catch (e) {
+        showToast('导入失败', 'error');
+      }
+    };
+    input.click();
+  }
+
+  function importWord(parentId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.docx';
+    input.onchange = async () => {
+      const file = input.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch(`/api/nodes/${parentId}/import-word`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          showToast(data.error || '导入失败', 'error');
+          return;
+        }
+        const newNode = await res.json();
+        pendingSelectId = newNode.id;
+        await loadTree();
+        showToast('Word 文档导入成功', 'success');
+      } catch (e) {
+        showToast('导入失败', 'error');
+      }
+    };
+    input.click();
+  }
+
+  function importExcel(parentId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async () => {
+      const file = input.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch(`/api/nodes/${parentId}/import-excel`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          showToast(data.error || '导入失败', 'error');
+          return;
+        }
+        const newNode = await res.json();
+        pendingSelectId = newNode.id;
+        await loadTree();
+        showToast('Excel 文档导入成功', 'success');
       } catch (e) {
         showToast('导入失败', 'error');
       }
@@ -426,6 +521,12 @@ const Tree = (() => {
         break;
       case 'import':
         importMarkdown(id);
+        break;
+      case 'import-word':
+        importWord(id);
+        break;
+      case 'import-excel':
+        importExcel(id);
         break;
       case 'rename':
         renameNodeById(id);

@@ -1,4 +1,10 @@
-"""Email notification utility (SMTP with graceful fallback to logging)."""
+'''
+Author: yuanzhenhui 
+Date: 2026-06-02 09:56:54
+LastEditors: yuanzhenhui 
+LastEditTime: 2026-06-03 17:41:43
+FilePath: /ops_wiki/email_utils.py
+'''
 
 import logging
 import smtplib
@@ -7,7 +13,7 @@ from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-
+# 从 Flask 配置里读取 SMTP 参数
 def _get_smtp_config(app):
     return {
         'server': app.config.get('MAIL_SERVER', ''),
@@ -18,6 +24,7 @@ def _get_smtp_config(app):
     }
 
 
+# 发送通知邮件，SMTP 不可用时降级为日志记录
 def send_notification(to_email: str, subject: str, body: str, app=None) -> bool:
     if app is None:
         from flask import current_app as flask_app

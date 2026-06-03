@@ -1,5 +1,10 @@
-"""Hybrid encryption: AES-256-GCM (content) + RSA-2048 OAEP (AES key)."""
-
+'''
+Author: yuanzhenhui 
+Date: 2026-06-02 09:24:17
+LastEditors: yuanzhenhui 
+LastEditTime: 2026-06-03 17:41:05
+FilePath: /ops_wiki/crypto.py
+'''
 from __future__ import annotations
 
 import base64
@@ -10,8 +15,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
+# 生成 RSA-2048 密钥对，返回 (私钥 PEM, 公钥 PEM)
 def generate_key_pair() -> tuple[str, str]:
-    """Generate RSA-2048 key pair. Returns (private_key_pem, public_key_pem)."""
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key()
 
@@ -29,13 +34,9 @@ def generate_key_pair() -> tuple[str, str]:
     return private_pem, public_pem
 
 
+# 混合加密：AES-GCM 加密内容，RSA-OAEP 加密 AES 密钥
+# 返回 (加密内容_base64, 加密密钥_base64)
 def encrypt_content(plaintext: str, public_key_pem: str) -> tuple[str, str]:
-    """Encrypt content with hybrid AES+RSA.
-
-    Returns (encrypted_content_base64, encrypted_key_base64).
-    encrypted_content = base64(nonce + AES-GCM ciphertext)
-    encrypted_key = base64(RSA-OAEP encrypted AES key)
-    """
     if not plaintext:
         return '', ''
 
@@ -59,8 +60,8 @@ def encrypt_content(plaintext: str, public_key_pem: str) -> tuple[str, str]:
     return encrypted_content, encrypted_key_b64
 
 
+# 解密由 encrypt_content 加密的内容
 def decrypt_content(encrypted_content: str, encrypted_key: str, private_key_pem: str) -> str:
-    """Decrypt content that was encrypted with encrypt_content()."""
     if not encrypted_content or not encrypted_key:
         return ''
 

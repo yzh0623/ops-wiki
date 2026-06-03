@@ -1,5 +1,12 @@
-"""Ops Wiki — admin-only blueprint (user management)."""
-from flask import Blueprint, request, jsonify
+'''
+Author: yuanzhenhui
+Date: 2026-06-03 16:12:20
+LastEditors: yuanzhenhui
+LastEditTime: 2026-06-03 17:39:14
+FilePath: /ops_wiki/admin.py
+'''
+
+from flask import Blueprint, jsonify
 from flask_login import current_user
 from extensions import db
 from models import User
@@ -8,6 +15,7 @@ from decorators import admin_required
 admin_bp = Blueprint('admin', __name__)
 
 
+# 把用户对象转成字典，方便 JSON 序列化
 def _user_dict(user: User) -> dict:
     return {
         'id': user.id,
@@ -19,6 +27,7 @@ def _user_dict(user: User) -> dict:
     }
 
 
+# 管理员查看所有用户列表
 @admin_bp.route('/users', methods=['GET'])
 @admin_required
 def list_users():
@@ -26,6 +35,7 @@ def list_users():
     return jsonify({'users': [_user_dict(u) for u in users]}), 200
 
 
+# 管理员审批通过用户注册
 @admin_bp.route('/users/<int:user_id>/approve', methods=['POST'])
 @admin_required
 def approve_user(user_id):
@@ -35,6 +45,7 @@ def approve_user(user_id):
     return jsonify({**_user_dict(user), 'message': '用户已激活'}), 200
 
 
+# 管理员停用用户（不能停用自己）
 @admin_bp.route('/users/<int:user_id>/deactivate', methods=['POST'])
 @admin_required
 def deactivate_user(user_id):
@@ -44,6 +55,3 @@ def deactivate_user(user_id):
     user.is_active = False
     db.session.commit()
     return jsonify({**_user_dict(user), 'message': '用户已停用'}), 200
-
-
-

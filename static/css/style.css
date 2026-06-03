@@ -240,6 +240,39 @@ body {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
 }
 
+/* Sidebar Resize Divider */
+.sidebar-divider {
+  width: 6px;
+  cursor: col-resize;
+  background: var(--color-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+  position: relative;
+}
+
+.sidebar-divider:hover {
+  background: var(--color-primary-subtle);
+}
+
+.sidebar-divider:active {
+  background: var(--color-primary);
+}
+
+.sidebar-divider-handle {
+  width: 2px;
+  height: 32px;
+  background: var(--color-border);
+  border-radius: 1px;
+  transition: background var(--transition-fast);
+}
+
+.sidebar-divider:hover .sidebar-divider-handle {
+  background: var(--color-primary);
+}
+
 /* Tree Container */
 #tree-container {
   flex: 1;
