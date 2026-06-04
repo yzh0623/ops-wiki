@@ -675,6 +675,223 @@ def _import_excel(file, parent_id):
     return jsonify(_node_dict(node)), 201
 
 
+# 校验目标父节点是否属于当前用户
+def _check_parent_owner(parent_id):
+    if parent_id:
+        parent = Node.query.get(parent_id)
+        if not parent:
+            return None, (jsonify({'error': '目标节点不存在'}), 404)
+        if parent.owner_id != current_user.id:
+            return None, (jsonify({'error': '只能导入到自己的节点下'}), 403)
+    return parent_id, None
+
+
+@views_bp.route('/nodes/<int:parent_id>/import', methods=['POST'])
+@login_required
+# 导入 Markdown/纯文本文件到指定父节点下
+def import_to_node(parent_id):
+    real_parent_id, err = _check_parent_owner(parent_id)
+    if err:
+        return err
+
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': '请选择文件'}), 400
+
+    filename = (file.filename or 'unnamed').strip()
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in ('.txt', '.md', '.markdown', '.py', '.js', '.html', '.css', '.json',
+                   '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.log',
+                   '.csv', '.tsv', '.sql', '.sh', '.bat', '.rst', '.tex'):
+        return jsonify({'error': f'不支持的文件格式: {ext}，请使用 Markdown 导入'}), 400
+
+    try:
+        content = file.read().decode('utf-8')
+    except UnicodeDecodeError:
+        content = file.read().decode('latin-1')
+    title = filename.rsplit('.', 1)[0]
+
+    node = Node(
+        title=title,
+        parent_id=real_parent_id,
+        type='article',
+        content=content,
+        owner_id=current_user.id,
+    )
+    if content and current_user.rsa_public_key:
+        enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
+        node.content = enc_content
+        node.encrypted_key = enc_key
+
+    db.session.add(node)
+    db.session.commit()
+    return jsonify(_node_dict(node)), 201
+
+
+@views_bp.route('/nodes/<int:parent_id>/import-word', methods=['POST'])
+@login_required
+# 导入 Word 文档到指定父节点下
+def import_word_to_node(parent_id):
+    real_parent_id, err = _check_parent_owner(parent_id)
+    if err:
+        return err
+
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': '请选择文件'}), 400
+
+    filename = (file.filename or 'unnamed').strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if ext != '.docx':
+        return jsonify({'error': '仅支持 .docx 格式'}), 400
+
+    return _import_docx(file, real_parent_id)
+
+
+@views_bp.route('/nodes/<int:parent_id>/import-excel', methods=['POST'])
+@login_required
+# 导入 Excel 文件到指定父节点下
+def import_excel_to_node(parent_id):
+    real_parent_id, err = _check_parent_owner(parent_id)
+    if err:
+        return err
+
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': '请选择文件'}), 400
+
+    filename = (file.filename or 'unnamed').strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ('.xlsx', '.xlsm', '.xls'):
+        return jsonify({'error': '仅支持 .xlsx/.xls 格式'}), 400
+
+    return _import_excel(file, real_parent_id)
+
+
+@views_bp.route('/nodes/batch-authorize', methods=['POST'])
+@login_required
+# 批量授权或撤销节点权限
+def batch_authorize():
+    data = request.get_json(force=True)
+    node_ids = data.get('node_ids', [])
+    user_ids = data.get('user_ids', [])
+    is_active = data.get('is_active', True)
+    recursive = data.get('recursive', False)
+
+    if not node_ids or not user_ids:
+        return jsonify({'error': '节点和用户不能为空'}), 400
+
+    # 收集需要操作的节点 ID（含子节点）
+    target_node_ids = set(node_ids)
+    if recursive:
+        for nid in node_ids:
+            target_node_ids.update(_get_subtree_ids(nid))
+
+    # 校验所有节点都属于当前用户
+    nodes = Node.query.filter(Node.id.in_(target_node_ids)).all()
+    for n in nodes:
+        if n.owner_id != current_user.id:
+            return jsonify({'error': f'无权操作节点 {n.id}'}), 403
+
+    # 校验所有目标用户
+    grantees = User.query.filter(User.id.in_(user_ids)).all()
+    if len(grantees) != len(user_ids):
+        return jsonify({'error': '部分用户不存在'}), 404
+
+    granted, revoked = 0, 0
+    for node_id in target_node_ids:
+        for grantee_id in user_ids:
+            perm = NodePerm.query.filter_by(
+                node_id=node_id, grantee_id=grantee_id
+            ).first()
+
+            if is_active:
+                # 授权
+                if perm and perm.is_active:
+                    continue
+                if perm:
+                    perm.is_active = True
+                else:
+                    db.session.add(NodePerm(
+                        node_id=node_id,
+                        grantor_id=current_user.id,
+                        grantee_id=grantee_id,
+                    ))
+                granted += 1
+            else:
+                # 撤销
+                if perm and perm.is_active:
+                    perm.is_active = False
+                    revoked += 1
+
+    db.session.commit()
+
+    msg = f'已授权 {granted} 条' if is_active else f'已撤销 {revoked} 条'
+    return jsonify({'message': msg}), 200
+
+
+@views_bp.route('/nodes/<int:node_id>/transfer', methods=['POST'])
+@login_required
+# 转让节点所有权给其他用户
+def transfer_node(node_id):
+    node = Node.query.get_or_404(node_id)
+    if node.owner_id != current_user.id:
+        return jsonify({'error': '只有所有者才能转让'}), 403
+
+    data = request.get_json(force=True)
+    new_owner_id = data.get('new_owner_id')
+    recursive = data.get('recursive', False)
+
+    new_owner = User.query.get(new_owner_id)
+    if not new_owner or not new_owner.is_active:
+        return jsonify({'error': '目标用户不存在或未激活'}), 404
+
+    # 如果文章内容加密，需要用当前所有者私钥解密，再用新所有者公钥重新加密
+    if node.encrypted_key and node.content:
+        try:
+            plaintext = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
+        except Exception:
+            logger.exception('Decryption failed for node %d during transfer', node.id)
+            return jsonify({'error': '解密内容失败，无法转让'}), 500
+
+        if new_owner.rsa_public_key:
+            enc_content, enc_key = encrypt_content(plaintext, new_owner.rsa_public_key)
+            node.content = enc_content
+            node.encrypted_key = enc_key
+        else:
+            node.content = plaintext
+            node.encrypted_key = None
+
+    node.owner_id = new_owner_id
+    transferred = 1
+
+    # 递归转让子节点
+    if recursive:
+        subtree_ids = _get_subtree_ids(node_id)
+        for sid in subtree_ids:
+            child = Node.query.get(sid)
+            if child and child.owner_id == current_user.id:
+                if child.encrypted_key and child.content:
+                    try:
+                        plaintext = decrypt_content(child.content, child.encrypted_key, current_user.rsa_private_key)
+                        if new_owner.rsa_public_key:
+                            enc_content, enc_key = encrypt_content(plaintext, new_owner.rsa_public_key)
+                            child.content = enc_content
+                            child.encrypted_key = enc_key
+                        else:
+                            child.content = plaintext
+                            child.encrypted_key = None
+                    except Exception:
+                        logger.exception('Decryption failed for child node %d during transfer', child.id)
+                        continue
+                child.owner_id = new_owner_id
+                transferred += 1
+
+    db.session.commit()
+    return jsonify({'message': f'已转让 {transferred} 个节点给 {new_owner.nickname or new_owner.email}'}), 200
+
+
 @views_bp.route('/users', methods=['GET'])
 @login_required
 # 列出可分享的用户（排除自己）
