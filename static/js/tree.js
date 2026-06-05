@@ -1,4 +1,4 @@
-/* Ops Wiki — Tree sidebar component (right-click context menu, CRUD, search) */
+/* Ops Wiki — Tree sidebar component (right-click context menu, CRUD, search, drag-and-drop) */
 
 const Tree = (() => {
   let allNodes = [];       // Flat list for search/counting
@@ -9,6 +9,17 @@ const Tree = (() => {
   let currentUserId = null;
   let contextNodeId = null; // Node ID that was right-clicked
   let pendingSelectId = null; // ID to select after tree reload
+  let wasDragging = false;    // Prevent click after drag
+
+  // ─── Drag-and-Drop State ───
+  let dragState = null;       // { nodeId, ghostEl, offsetX, offsetY, sourceEl, dropTargetId }
+  let dragTimer = null;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let dragCurrentX = 0;      // 实时追踪鼠标位置（长按等待期间也会更新）
+  let dragCurrentY = 0;
+
+  const LONG_PRESS_MS = 200;  // 长按触发延迟（ms）
 
   const TREE_CONTAINER = document.getElementById('tree-container');
   const SEARCH_INPUT = document.getElementById('search-tree');
@@ -150,6 +161,184 @@ const Tree = (() => {
     return div.innerHTML;
   }
 
+  // ─── Drag-and-Drop Helpers ───
+
+  // 获取指定节点的所有后代 ID
+  function getSubtreeIds(nodeId) {
+    const ids = [];
+    const children = allNodes.filter(n => n.parent_id === nodeId);
+    for (const child of children) {
+      ids.push(child.id);
+      ids.push(...getSubtreeIds(child.id));
+    }
+    return ids;
+  }
+
+  // 检查 checkId 是否是 parentId 的后代
+  function isDescendantOf(parentId, checkId) {
+    const subtree = getSubtreeIds(parentId);
+    return subtree.includes(checkId);
+  }
+
+  // 启动拖拽
+  function startDrag(nodeId, sourceEl, mouseX, mouseY) {
+    const node = allNodes.find(n => n.id === nodeId);
+    if (!node || node.owner_id !== currentUserId) return;
+
+    // 创建 ghost 元素
+    const rect = sourceEl.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.className = 'tree-drag-ghost';
+    ghost.innerHTML = sourceEl.innerHTML;
+    ghost.style.width = rect.width + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    document.body.appendChild(ghost);
+
+    // 标记原始元素为拖拽中
+    const li = sourceEl.closest('.tree-item');
+    if (li) li.classList.add('dragging');
+
+    // 创建全屏拖拽遮罩
+    const overlay = document.createElement('div');
+    overlay.id = 'tree-drag-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;cursor:grabbing;';
+    document.body.appendChild(overlay);
+
+    dragState = {
+      nodeId,
+      ghostEl: ghost,
+      offsetX: mouseX - rect.left,
+      offsetY: mouseY - rect.top,
+      sourceEl,
+      dropTargetId: null,
+    };
+
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+  }
+
+  // 更新拖拽位置和目标
+  function updateDrag(e) {
+    if (!dragState) return;
+
+    const { ghostEl, offsetX, offsetY, nodeId } = dragState;
+
+    // 更新 ghost 位置
+    ghostEl.style.left = (e.clientX - offsetX) + 'px';
+    ghostEl.style.top = (e.clientY - offsetY) + 'px';
+
+    // 查找最近的合法放置目标
+    const target = findDropTarget(e.clientX, e.clientY, nodeId);
+
+    // 清除之前的放置目标高亮
+    clearDropTargets();
+
+    if (target) {
+      const targetEl = TREE_CONTAINER.querySelector(`.tree-item[data-id="${target.id}"] > .tree-item-content`);
+      if (targetEl) {
+        targetEl.classList.add('drop-target');
+        // 展开目标节点（如果有子节点且已折叠）
+        const parentLi = targetEl.closest('.tree-item');
+        const childUl = parentLi ? parentLi.querySelector(':scope > .tree-children') : null;
+        if (childUl && !childUl.classList.contains('expanded')) {
+          childUl.classList.add('expanded');
+          const toggle = targetEl.querySelector('.tree-toggle');
+          if (toggle) toggle.classList.add('expanded');
+        }
+      }
+      dragState.dropTargetId = target.id;
+    } else {
+      dragState.dropTargetId = null;
+    }
+  }
+
+  // 查找鼠标位置最近的合法放置目标
+  function findDropTarget(mouseX, mouseY, draggedId) {
+    const items = TREE_CONTAINER.querySelectorAll('.tree-item-content');
+    let closest = null;
+    let closestDist = Infinity;
+
+    for (const item of items) {
+      const id = parseInt(item.dataset.id);
+      if (id === draggedId) continue;
+      // 不允许拖入自己的子树
+      if (isDescendantOf(draggedId, id)) continue;
+
+      const rect = item.getBoundingClientRect();
+      const cy = rect.top + rect.height / 2;
+      const dist = Math.abs(mouseY - cy);
+
+      if (dist < closestDist && dist < 50) {
+        closestDist = dist;
+        closest = { id, el: item };
+      }
+    }
+
+    return closest;
+  }
+
+  // 清除放置目标高亮
+  function clearDropTargets() {
+    TREE_CONTAINER.querySelectorAll('.drop-target').forEach(el => {
+      el.classList.remove('drop-target');
+    });
+  }
+
+  // 结束拖拽
+  function endDrag() {
+    if (!dragState) return;
+
+    const { nodeId, ghostEl, dropTargetId, sourceEl } = dragState;
+
+    // 清理 ghost
+    if (ghostEl && ghostEl.parentNode) ghostEl.remove();
+
+    // 清理原始元素样式
+    const li = sourceEl.closest('.tree-item');
+    if (li) li.classList.remove('dragging');
+
+    // 清理放置目标高亮
+    clearDropTargets();
+
+    // 清理拖拽遮罩
+    const overlay = document.getElementById('tree-drag-overlay');
+    if (overlay) overlay.remove();
+
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    // 如果有合法的放置目标，执行移动
+    if (dropTargetId !== null) {
+      moveNodeToParent(nodeId, dropTargetId);
+    }
+
+    dragState = null;
+  }
+
+  // 调用后端 API 移动节点
+  async function moveNodeToParent(nodeId, newParentId) {
+    try {
+      const res = await fetch(`/api/nodes/${nodeId}/move`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: newParentId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        showToast(data.error || '移动失败', 'error');
+        return;
+      }
+      pendingSelectId = nodeId;
+      await loadTree();
+      showToast('节点已移动', 'success');
+    } catch (e) {
+      showToast('移动节点失败', 'error');
+    }
+  }
+
+  // ─── Tree Event Binding ───
+
   function bindTreeEvents() {
     // Toggle expand/collapse
     TREE_CONTAINER.querySelectorAll('.tree-toggle:not(.empty)').forEach(el => {
@@ -170,17 +359,50 @@ const Tree = (() => {
       });
     });
 
-    // Left-click: select node (load in editor)
+    // Left-click + drag initiation on tree-item-content
     TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
+      // Click: select node (skip if just finished dragging)
       el.addEventListener('click', (e) => {
+        if (wasDragging) {
+          wasDragging = false;
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
         const id = parseInt(el.dataset.id);
         selectNode(id, e);
       });
-    });
 
-    // Right-click: context menu
-    TREE_CONTAINER.querySelectorAll('.tree-item-content').forEach(el => {
+      // Mousedown: start long-press timer for drag
+      el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;          // 仅左键
+        if (e.ctrlKey || e.metaKey) return;  // 不干扰多选
+
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragCurrentX = e.clientX;
+        dragCurrentY = e.clientY;
+
+        dragTimer = setTimeout(() => {
+          const id = parseInt(el.dataset.id);
+          const node = allNodes.find(n => n.id === id);
+          // 只有自己的节点才能拖拽
+          if (!node || node.owner_id !== currentUserId) {
+            dragTimer = null;
+            return;
+          }
+          // 使用实时追踪的鼠标位置，而非 mousedown 时的位置
+          startDrag(id, el, dragCurrentX, dragCurrentY);
+          dragTimer = null;
+        }, LONG_PRESS_MS);
+      });
+
+      // 阻止浏览器原生拖拽（防止干扰自定义拖拽）
+      el.addEventListener('dragstart', (e) => {
+        e.preventDefault();
+      });
+
+      // Right-click: context menu
       el.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -189,6 +411,33 @@ const Tree = (() => {
       });
     });
   }
+
+  // Document-level drag handlers
+  document.addEventListener('mousemove', (e) => {
+    // 实时追踪鼠标位置（长按等待期间也更新，供 setTimeout 回调使用）
+    if (dragTimer && !dragState) {
+      dragCurrentX = e.clientX;
+      dragCurrentY = e.clientY;
+      return;
+    }
+    // 拖拽进行中，更新位置
+    if (dragState) {
+      e.preventDefault();
+      updateDrag(e);
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (dragTimer) {
+      clearTimeout(dragTimer);
+      dragTimer = null;
+    }
+    if (dragState) {
+      endDrag();
+      wasDragging = true;
+      setTimeout(() => { wasDragging = false; }, 100);
+    }
+  });
 
   // ─── Search ───
 
@@ -382,34 +631,61 @@ const Tree = (() => {
     }
   }
 
+  // ─── Batch Import Helpers ───
+
+  // 批量上传多个文件，返回 { success, failed } 计数
+  async function batchUploadFiles(files, apiUrl) {
+    let success = 0;
+    let failed = 0;
+    let lastSuccessId = null;
+
+    for (let i = 0; i < files.length; i++) {
+      const formData = new FormData();
+      formData.append('file', files[i]);
+
+      try {
+        const res = await fetch(apiUrl, { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          lastSuccessId = data.id;
+          success++;
+        } else {
+          failed++;
+          console.warn(`导入文件 "${files[i].name}" 失败`);
+        }
+      } catch (e) {
+        failed++;
+        console.warn(`导入文件 "${files[i].name}" 异常:`, e);
+      }
+    }
+
+    return { success, failed, lastSuccessId };
+  }
+
+  // 显示批量导入结果
+  function showBatchResult(result, typeLabel) {
+    if (result.success > 0 && result.failed === 0) {
+      showToast(`成功导入 ${result.success} 个${typeLabel}文件`, 'success');
+    } else if (result.success > 0 && result.failed > 0) {
+      showToast(`导入完成：${result.success} 成功，${result.failed} 失败`, 'error');
+    } else {
+      showToast(`${typeLabel}文件导入失败`, 'error');
+    }
+  }
+
   function importMarkdown(parentId) {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.md';
+    input.accept = '.md,.txt,.markdown,.py,.js,.html,.css,.json,.xml,.yaml,.yml,.toml,.ini,.cfg,.conf,.log,.csv,.tsv,.sql,.sh,.bat,.rst,.tex';
+    input.multiple = true;
     input.onchange = async () => {
-      const file = input.files[0];
-      if (!file) return;
+      const files = [...input.files];
+      if (files.length === 0) return;
 
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        const res = await fetch(`/api/nodes/${parentId}/import`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          showToast(data.error || '导入失败', 'error');
-          return;
-        }
-        const newNode = await res.json();
-        pendingSelectId = newNode.id;
-        await loadTree();
-        showToast('文章导入成功', 'success');
-      } catch (e) {
-        showToast('导入失败', 'error');
-      }
+      const result = await batchUploadFiles(files, `/api/nodes/${parentId}/import`);
+      if (result.lastSuccessId) pendingSelectId = result.lastSuccessId;
+      await loadTree();
+      showBatchResult(result, 'Markdown');
     };
     input.click();
   }
@@ -418,30 +694,15 @@ const Tree = (() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.docx';
+    input.multiple = true;
     input.onchange = async () => {
-      const file = input.files[0];
-      if (!file) return;
+      const files = [...input.files];
+      if (files.length === 0) return;
 
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        const res = await fetch(`/api/nodes/${parentId}/import-word`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          showToast(data.error || '导入失败', 'error');
-          return;
-        }
-        const newNode = await res.json();
-        pendingSelectId = newNode.id;
-        await loadTree();
-        showToast('Word 文档导入成功', 'success');
-      } catch (e) {
-        showToast('导入失败', 'error');
-      }
+      const result = await batchUploadFiles(files, `/api/nodes/${parentId}/import-word`);
+      if (result.lastSuccessId) pendingSelectId = result.lastSuccessId;
+      await loadTree();
+      showBatchResult(result, 'Word');
     };
     input.click();
   }
@@ -450,30 +711,15 @@ const Tree = (() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.xlsx,.xls';
+    input.multiple = true;
     input.onchange = async () => {
-      const file = input.files[0];
-      if (!file) return;
+      const files = [...input.files];
+      if (files.length === 0) return;
 
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        const res = await fetch(`/api/nodes/${parentId}/import-excel`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          showToast(data.error || '导入失败', 'error');
-          return;
-        }
-        const newNode = await res.json();
-        pendingSelectId = newNode.id;
-        await loadTree();
-        showToast('Excel 文档导入成功', 'success');
-      } catch (e) {
-        showToast('导入失败', 'error');
-      }
+      const result = await batchUploadFiles(files, `/api/nodes/${parentId}/import-excel`);
+      if (result.lastSuccessId) pendingSelectId = result.lastSuccessId;
+      await loadTree();
+      showBatchResult(result, 'Excel');
     };
     input.click();
   }
@@ -635,6 +881,7 @@ const Tree = (() => {
     addNode,
     deleteNode,
     renameNode,
+    moveNodeToParent,
     setCurrentUserId,
     resetCurrentUserId,
   };

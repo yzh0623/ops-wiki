@@ -113,6 +113,58 @@ const WikiEditor = (() => {
     HTML_PREVIEW.innerHTML = markdownToHtml(md);
   }
 
+  // ─── Bidirectional Scroll Sync ───
+
+  let isScrollSyncing = false;  // 防止循环触发
+
+  function syncScrollFromMarkdown() {
+    if (isScrollSyncing) return;
+    isScrollSyncing = true;
+
+    const md = MARKDOWN_EDITOR;
+    const html = HTML_PREVIEW;
+
+    // 按滚动比例同步
+    const mdMax = md.scrollHeight - md.clientHeight;
+    const htmlMax = html.scrollHeight - html.clientHeight;
+
+    if (mdMax <= 0 || htmlMax <= 0) {
+      isScrollSyncing = false;
+      return;
+    }
+
+    const ratio = md.scrollTop / mdMax;
+    html.scrollTop = ratio * htmlMax;
+
+    requestAnimationFrame(() => { isScrollSyncing = false; });
+  }
+
+  function syncScrollFromHtml() {
+    if (isScrollSyncing) return;
+    isScrollSyncing = true;
+
+    const md = MARKDOWN_EDITOR;
+    const html = HTML_PREVIEW;
+
+    const mdMax = md.scrollHeight - md.clientHeight;
+    const htmlMax = html.scrollHeight - html.clientHeight;
+
+    if (mdMax <= 0 || htmlMax <= 0) {
+      isScrollSyncing = false;
+      return;
+    }
+
+    const ratio = html.scrollTop / htmlMax;
+    md.scrollTop = ratio * mdMax;
+
+    requestAnimationFrame(() => { isScrollSyncing = false; });
+  }
+
+  function initScrollSync() {
+    MARKDOWN_EDITOR.addEventListener('scroll', syncScrollFromMarkdown);
+    HTML_PREVIEW.addEventListener('scroll', syncScrollFromHtml);
+  }
+
   // ─── Textarea input handler ───
 
   function init() {
@@ -271,6 +323,7 @@ const WikiEditor = (() => {
   // Initialize
   init();
   initDividerDrag();
+  initScrollSync();
 
   return { showPlaceholder, loadContent, getContent, getHtml, markSaved, isUnsaved, getCurrentNodeId };
 })();

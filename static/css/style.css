@@ -309,6 +309,9 @@ body {
   transition: background var(--transition-fast);
   gap: var(--space-3);
   cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .tree-item-content:hover {
@@ -1304,6 +1307,57 @@ mark {
 
 #tree-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* --------------------------------------------------------------------------
+   TREE DRAG-AND-DROP
+   -------------------------------------------------------------------------- */
+.tree-drag-ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0.85;
+  background: var(--color-bg-sidebar);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-text-sidebar);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  box-shadow: var(--shadow-xl);
+  max-width: 300px;
+  overflow: hidden;
+  transition: none;
+}
+
+.tree-drag-ghost .tree-toggle {
+  visibility: hidden;
+}
+
+.tree-item.dragging > .tree-item-content {
+  opacity: 0.35;
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+}
+
+.tree-item-content.drop-target {
+  background: rgba(99, 102, 241, 0.25) !important;
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  transition: background var(--transition-fast), outline var(--transition-fast);
+}
+
+.tree-item-content.drop-target .tree-label {
+  color: var(--color-primary) !important;
+  font-weight: var(--font-weight-semibold);
+}
+
+/* 长按拖拽时的提示光标 */
+.tree-item-content {
+  /* 保留原有的 cursor: pointer; 在长按后 JS 会覆盖 */
 }
 
 /* --------------------------------------------------------------------------
