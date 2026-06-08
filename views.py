@@ -546,10 +546,11 @@ def import_file():
     return jsonify({'error': f'不支持的文件格式: {ext}'}), 400
 
 
-# 导入 Word 文档并转成 Markdown
+# 导入 Word 文档并转成 Markdown（图片保留在文档原始位置）
 def _import_docx(file, parent_id):
     try:
         import docx  # type: ignore
+        from docx.oxml.ns import qn  # type: ignore
     except ImportError:
         return jsonify({'error': '服务器未安装 python-docx'}), 500
 
@@ -558,26 +559,9 @@ def _import_docx(file, parent_id):
     except Exception:
         return jsonify({'error': '无法解析该 Word 文档'}), 400
 
-    md_parts = []
-    for para in doc.paragraphs:
-        style = para.style.name if para.style else ''
-        text = para.text.strip()
-        if not text:
-            md_parts.append('')
-            continue
-        if 'Heading 1' in style:
-            md_parts.append(f'# {text}')
-        elif 'Heading 2' in style:
-            md_parts.append(f'## {text}')
-        elif 'Heading 3' in style:
-            md_parts.append(f'### {text}')
-        elif 'Heading 4' in style:
-            md_parts.append(f'#### {text}')
-        else:
-            md_parts.append(text)
-
-    # 从文档关系中提取图片
-    for i, rel in enumerate(doc.part.rels.values()):
+    # 第一步：预提取所有图片并保存到磁盘，建立 rId → markdown 图片引用的映射
+    image_rels = {}
+    for rel_id, rel in doc.part.rels.items():
         if 'image' in rel.reltype:
             try:
                 img = rel.target_part
@@ -589,9 +573,74 @@ def _import_docx(file, parent_id):
                 img_path = os.path.join(IMAGES_DIR, img_name)
                 with open(img_path, 'wb') as f:
                     f.write(img_bytes)
-                md_parts.append(f'![image](images/{img_name})')
+                image_rels[rel_id] = f'![image](images/{img_name})'
             except Exception:
                 pass
+
+    # 第二步：逐段落处理，在原始位置插入图片
+    md_parts = []
+    for para in doc.paragraphs:
+        style = para.style.name if para.style else ''
+        para_element = para._element
+
+        # 检测段落是否包含图片（<w:drawing> 元素）
+        drawings = para_element.findall(f'.//{qn("w:drawing")}')
+
+        if not drawings:
+            # 无图片，使用简单的文本提取
+            text = para.text.strip()
+            if not text:
+                md_parts.append('')
+                continue
+            if 'Heading 1' in style:
+                md_parts.append(f'# {text}')
+            elif 'Heading 2' in style:
+                md_parts.append(f'## {text}')
+            elif 'Heading 3' in style:
+                md_parts.append(f'### {text}')
+            elif 'Heading 4' in style:
+                md_parts.append(f'#### {text}')
+            else:
+                md_parts.append(text)
+        else:
+            # 包含图片，逐 run 处理以保持图片在文档中的原始位置
+            line_parts = []
+            seen_rids = set()  # 避免重复处理（如 mc:AlternateContent）
+
+            for run_element in para_element.findall(qn('w:r')):
+                # 按文档顺序遍历 run 的子元素，保证文本和图片的相对位置
+                for child in run_element:
+                    if child.tag == qn('w:drawing'):
+                        # 处理图片
+                        for blip in child.findall(f'.//{qn("a:blip")}'):
+                            embed = blip.get(qn('r:embed'))
+                            if embed and embed in image_rels and embed not in seen_rids:
+                                seen_rids.add(embed)
+                                line_parts.append(image_rels[embed])
+                    elif child.tag == qn('w:t'):
+                        text = child.text
+                        if text and text.strip():
+                            line_parts.append(text.strip())
+
+            if line_parts:
+                # 检查是否是标题段落
+                heading_prefix = ''
+                if 'Heading 1' in style:
+                    heading_prefix = '# '
+                elif 'Heading 2' in style:
+                    heading_prefix = '## '
+                elif 'Heading 3' in style:
+                    heading_prefix = '### '
+                elif 'Heading 4' in style:
+                    heading_prefix = '#### '
+
+                for i, part in enumerate(line_parts):
+                    if i == 0 and heading_prefix and not part.startswith('!['):
+                        md_parts.append(f'{heading_prefix}{part}')
+                    else:
+                        md_parts.append(part)
+            else:
+                md_parts.append('')
 
     content = '\n'.join(md_parts)
     title = file.filename.rsplit('.', 1)[0] if hasattr(file, 'filename') else '导入文档'
