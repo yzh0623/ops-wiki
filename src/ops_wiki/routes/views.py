@@ -1,41 +1,59 @@
 '''
-Author: yuanzhenhui 
-Date: 2026-06-03 16:12:27
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-03 17:44:25
-FilePath: /ops_wiki/views.py
+主要 API 视图：文档节点 CRUD、树、搜索、文件导入、分享、转让、批量授权。
 '''
-
-# ops_wiki - 主要 API 视图
-
 from __future__ import annotations
 
 import logging
 import os
-import uuid
 
-from flask import Blueprint, request, jsonify
-
-logger = logging.getLogger(__name__)
+from flask import Blueprint, request, jsonify, render_template, current_app
 from flask_login import login_required, current_user
 
-from extensions import db
-from models import Node, User, NodePermission as NodePerm
-from crypto import encrypt_content, decrypt_content
-from email_utils import send_notification
+from ..core.extensions import db
+from ..models import Node, User, NodePermission as NodePerm
+from ..services.crypto import encrypt_content, decrypt_content
+from ..services.email_utils import send_notification
+
+import random
+import string
+import time
+
+logger = logging.getLogger(__name__)
 
 views_bp = Blueprint('views', __name__)
 
-# Word 文档图片提取目录
-IMAGES_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'images')
-os.makedirs(IMAGES_DIR, exist_ok=True)
+
+# 图片统一存储目录（来自配置，指向个人数据资产的 imgs 目录）
+def get_images_dir() -> str:
+    images_dir = current_app.config.get('IMAGES_DIR')
+    if not images_dir:
+        images_dir = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), 'images')
+    os.makedirs(images_dir, exist_ok=True)
+    return images_dir
+
+
+# 生成统一命名的图片文件名：img_<毫秒时间戳>_<4位随机>.ext
+def _gen_image_filename(ext: str) -> str:
+    rand = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+    ts = int(time.time() * 1000)
+    ext = (ext or '').lower()
+    if not ext.startswith('.'):
+        ext = '.' + ext
+    return f'img_{ts}_{rand}{ext}'
+
+
+# 把图片字节保存到统一图片目录并返回 (存储文件名, 访问URL)
+def _save_image_bytes(img_bytes: bytes, ext: str) -> tuple[str, str]:
+    images_dir = get_images_dir()
+    fname = _gen_image_filename(ext)
+    with open(os.path.join(images_dir, fname), 'wb') as f:
+        f.write(img_bytes)
+    return fname, f'images/{fname}'
 
 
 @views_bp.record_once
 # 注册 SPA 根路由
 def _register_root_route(state):
-    from flask import render_template
-
     @state.app.route('/')
     def spa_index():
         return render_template('index.html')
@@ -559,7 +577,7 @@ def _import_docx(file, parent_id):
     except Exception:
         return jsonify({'error': '无法解析该 Word 文档'}), 400
 
-    # 第一步：预提取所有图片并保存到磁盘，建立 rId → markdown 图片引用的映射
+    # 第一步：预提取所有图片并保存到统一图片目录，建立 rId → markdown 图片引用的映射
     image_rels = {}
     for rel_id, rel in doc.part.rels.items():
         if 'image' in rel.reltype:
@@ -569,11 +587,9 @@ def _import_docx(file, parent_id):
                 ext = os.path.splitext(img.partname)[1]
                 if not ext:
                     ext = '.png'
-                img_name = f'import_{uuid.uuid4().hex}{ext}'
-                img_path = os.path.join(IMAGES_DIR, img_name)
-                with open(img_path, 'wb') as f:
-                    f.write(img_bytes)
-                image_rels[rel_id] = f'![image](images/{img_name})'
+                # 统一重命名后存入个人数据资产 imgs 目录
+                fname, url = _save_image_bytes(img_bytes, ext)
+                image_rels[rel_id] = f'![image]({url})'
             except Exception:
                 pass
 
@@ -939,6 +955,35 @@ def transfer_node(node_id):
 
     db.session.commit()
     return jsonify({'message': f'已转让 {transferred} 个节点给 {new_owner.nickname or new_owner.email}'}), 200
+
+
+@views_bp.route('/images/upload', methods=['POST'])
+@login_required
+# 上传本地图片（markdown 写作用），统一重命名后存入 imgs 目录，返回可插入的访问 URL
+def upload_image():
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': '请选择图片文件'}), 400
+
+    filename = (file.filename or 'unnamed').strip()
+    ext = os.path.splitext(filename)[1].lower()
+    # 仅允许常见图片格式
+    allowed = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg')
+    if ext not in allowed:
+        return jsonify({'error': f'不支持的图片格式: {ext}'}), 400
+
+    try:
+        img_bytes = file.read()
+    except Exception:
+        return jsonify({'error': '读取图片失败'}), 400
+
+    try:
+        fname, url = _save_image_bytes(img_bytes, ext)
+    except Exception as e:
+        logger.exception('保存上传图片失败')
+        return jsonify({'error': '保存图片失败'}), 500
+
+    return jsonify({'url': f'/{url}', 'filename': fname}), 201
 
 
 @views_bp.route('/users', methods=['GET'])

@@ -1,17 +1,12 @@
 '''
-Author: yuanzhenhui 
-Date: 2026-06-02 08:36:09
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-02 16:55:46
-FilePath: /ops_wiki/models.py
+数据库模型：User、Node、NodePermission。
 '''
-
 from datetime import datetime
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 
-from extensions import db
+from ..core.extensions import db
 
 
 # 用户账号模型

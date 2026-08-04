@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ops Wiki</title>
-  <!-- Google Fonts -->
+  <!-- Google Fonts (async load to avoid blocking render) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"></noscript>
   <!-- Custom CSS -->
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -15,8 +16,9 @@
   <!-- Top Navigation Bar -->
   <header id="topbar">
     <div class="topbar-left">
-      <svg class="topbar-logo" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-      <h1 class="topbar-title">Ops Wiki</h1>
+      <a class="brand" href="#" aria-label="Ops Wiki 首页">
+        <span class="brand-ops">Ops</span><span class="brand-wiki">Wiki</span>
+      </a>
     </div>
     <div class="topbar-right">
       <span id="user-info" class="user-info"></span>
@@ -53,15 +55,41 @@
       <!-- Toolbar Row -->
       <div id="toolbar">
         <div class="toolbar-left">
-          <div class="highlight-wrapper">
+          <div class="md-toolbar highlight-toolbar" role="search" aria-label="高亮关键字搜索">
             <svg class="highlight-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="highlight-input" placeholder="高亮关键词..." />
+            <input type="text" id="highlight-input" placeholder="高亮关键词..." aria-label="高亮关键字" />
+            <button type="button" class="md-btn hl-nav" id="hl-prev" title="上一个匹配 (Shift+Enter)" aria-label="上一个匹配" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
+            <button type="button" class="md-btn hl-nav" id="hl-next" title="下一个匹配 (Enter)" aria-label="下一个匹配" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <span class="hl-count" id="hl-count" aria-live="polite"></span>
+          </div>
+          <div class="md-toolbar" id="md-toolbar" role="toolbar" aria-label="Markdown 格式工具栏">
+            <button class="md-btn" data-md="bold" title="加粗 (Ctrl+B)" aria-label="加粗"><strong>B</strong></button>
+            <button class="md-btn" data-md="italic" title="斜体 (Ctrl+I)" aria-label="斜体"><em>I</em></button>
+            <button class="md-btn" data-md="underline" title="下划线" aria-label="下划线"><span style="text-decoration:underline">U</span></button>
+            <button class="md-btn" data-md="strike" title="删除线" aria-label="删除线"><span style="text-decoration:line-through">S</span></button>
+            <button class="md-btn" data-md="code" title="行内代码" aria-label="行内代码">&lt;/&gt;</button>
+            <span class="md-sep"></span>
+            <button class="md-btn" data-md="h1" title="一级标题" aria-label="一级标题">H1</button>
+            <button class="md-btn" data-md="h2" title="二级标题" aria-label="二级标题">H2</button>
+            <button class="md-btn" data-md="h3" title="三级标题" aria-label="三级标题">H3</button>
+            <span class="md-sep"></span>
+            <button class="md-btn" data-md="quote" title="引用" aria-label="引用">&ldquo;</button>
+            <button class="md-btn" data-md="ul" title="无序列表" aria-label="无序列表">&bull;</button>
+            <button class="md-btn" data-md="ol" title="有序列表" aria-label="有序列表">1.</button>
+            <button class="md-btn" data-md="task" title="任务列表" aria-label="任务列表">&#10003;</button>
+            <button class="md-btn" data-md="codeblock" title="代码块" aria-label="代码块">{ }</button>
+            <button class="md-btn" data-md="link" title="链接" aria-label="链接">🔗</button>
+            <button class="md-btn" data-md="hr" title="分割线" aria-label="分割线">&mdash;</button>
+            <button class="md-btn md-btn-image" id="btn-insert-image" data-md="image" title="插入图片（上传到本地图片库）" aria-label="插入图片" disabled>🖼 图片</button>
           </div>
         </div>
         <div class="toolbar-right">
-          <span id="save-status" class="save-status"></span>
+          <span id="save-status" class="save-status" aria-live="polite"></span>
           <span id="readonly-badge" class="readonly-badge" style="display:none">只读</span>
-          <button id="btn-save" class="btn btn-save" disabled>保存</button>
         </div>
       </div>
 
@@ -93,7 +121,7 @@
   <div id="auth-overlay" class="overlay">
     <div class="modal" id="login-modal">
       <div class="auth-logo">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span class="auth-brand">Ops<span class="auth-brand-sub">Wiki</span></span>
       </div>
       <h2>登录 Ops Wiki</h2>
       <form id="login-form">
@@ -110,7 +138,7 @@
     </div>
     <div class="modal" id="register-modal" style="display:none">
       <div class="auth-logo">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span class="auth-brand">Ops<span class="auth-brand-sub">Wiki</span></span>
       </div>
       <h2>注册账号</h2>
       <form id="register-form">

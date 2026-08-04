@@ -1,19 +1,14 @@
 '''
-Author: yuanzhenhui 
-Date: 2026-06-02 08:36:09
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-03 17:40:46
-FilePath: /ops_wiki/auth.py
+认证蓝图：注册（含 RSA 密钥生成）、登录、登出、session 检查。
 '''
-
 import re
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from flask_login import login_user, logout_user, current_user
 
-from extensions import db
-from models import User
-from crypto import generate_key_pair
+from ..core.extensions import db
+from ..models import User
+from ..services.crypto import generate_key_pair
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -96,7 +91,6 @@ def login():
 # 登出，清除 session 和 cookie
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
-    from flask import session
     session.clear()
     logout_user()
     resp = jsonify({'message': '已登出'})

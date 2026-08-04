@@ -1,10 +1,4 @@
-'''
-Author: yuanzhenhui 
-Date: 2026-06-03 16:12:20
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-03 17:41:57
-FilePath: /ops_wiki/extensions.py
-'''
+'''第三方扩展实例（db、login_manager）。'''
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 

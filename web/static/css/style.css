@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Ops Wiki — "Obsidian Indigo" Design System
+   Ops Wiki — "Navy & White" Design System
    A refined, professional knowledge management interface.
    ========================================================================== */
 
@@ -7,41 +7,41 @@
    DESIGN TOKENS
    -------------------------------------------------------------------------- */
 :root {
-  /* === Color Palette === */
-  --color-primary: #6366f1;
-  --color-primary-hover: #4f46e5;
-  --color-primary-dark: #4338ca;
-  --color-primary-subtle: #eef2ff;
-  --color-success: #10b981;
-  --color-success-hover: #059669;
-  --color-danger: #ef4444;
-  --color-danger-hover: #dc2626;
-  --color-danger-subtle: #fef2f2;
-  --color-warning: #f59e0b;
+  /* === Color Palette — Navy & White === */
+  --color-primary: #1d3a63;
+  --color-primary-hover: #2a568c;
+  --color-primary-dark: #13294b;
+  --color-primary-subtle: #eaf0f8;
+  --color-success: #1f9d6b;
+  --color-success-hover: #178055;
+  --color-danger: #d64545;
+  --color-danger-hover: #b83838;
+  --color-danger-subtle: #fbeaea;
+  --color-warning: #c2841a;
 
   /* === Neutrals === */
   --color-bg-page: #ffffff;
-  --color-bg-sidebar: #0f172a;
-  --color-bg-sidebar-hover: #1e293b;
-  --color-bg-sidebar-selected: #4f46e5;
+  --color-bg-sidebar: #13294b;
+  --color-bg-sidebar-hover: #1d3a63;
+  --color-bg-sidebar-selected: #2a568c;
   --color-bg-toolbar: #ffffff;
-  --color-bg-hover-row: #f1f5f9;
-  --color-bg-hover-btn: #f8fafc;
-  --color-bg-selected: #eef2ff;
-  --color-bg-overlay: rgba(15, 23, 42, 0.6);
-  --color-border: #e2e8f0;
-  --color-border-light: #f1f5f9;
-  --color-border-input: #cbd5e1;
-  --color-text-sidebar: #cbd5e1;
-  --color-text-sidebar-muted: #64748b;
+  --color-bg-hover-row: #eef3f9;
+  --color-bg-hover-btn: #f4f7fb;
+  --color-bg-selected: #eaf0f8;
+  --color-bg-overlay: rgba(19, 41, 75, 0.55);
+  --color-border: #dde4ec;
+  --color-border-light: #eef3f9;
+  --color-border-input: #c3cdd9;
+  --color-text-sidebar: #d6e0ec;
+  --color-text-sidebar-muted: #93a6bd;
   --color-text-sidebar-active: #ffffff;
   --color-text-primary: #ffffff;
-  --color-text-body: #1e293b;
-  --color-text-muted: #64748b;
-  --color-text-placeholder: #94a3b8;
-  --color-text-placeholder-light: #cbd5e1;
-  --color-highlight-bg: #fef08a;
-  --color-admin-header-bg: #f8fafc;
+  --color-text-body: #1f2d3d;
+  --color-text-muted: #5d6b7b;
+  --color-text-placeholder: #9aa7b5;
+  --color-text-placeholder-light: #93a6bd;
+  --color-highlight-bg: #fde68a;
+  --color-admin-header-bg: #f4f7fb;
 
   /* === Typography === */
   --font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -133,12 +133,12 @@ body {
 #topbar {
   height: var(--topbar-height);
   min-height: var(--topbar-height);
-  background: linear-gradient(135deg, #312e81 0%, #3730a3 50%, #4338ca 100%);
+  background: linear-gradient(120deg, #0f2240 0%, #1d3a63 58%, #28527e 100%);
   color: var(--color-text-primary);
   display: flex;
   align-items: center;
   padding: 0 var(--space-6);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(15, 34, 64, 0.35);
   position: relative;
   z-index: 10;
 }
@@ -149,14 +149,32 @@ body {
   gap: var(--space-3);
 }
 
-.topbar-logo {
-  opacity: 0.9;
+/* Text-based brand logo */
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: #ffffff;
+  text-decoration: none;
+  user-select: none;
+  transition: opacity var(--transition-fast);
 }
 
-.topbar-title {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: -0.01em;
+.brand:hover {
+  opacity: 0.88;
+}
+
+.brand-ops {
+  color: #ffffff;
+}
+
+.brand-wiki {
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 600;
 }
 
 .topbar-right {
@@ -237,7 +255,7 @@ body {
 #sidebar-search input:focus {
   border-color: var(--color-primary);
   background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 2px rgba(29, 58, 99, 0.25);
 }
 
 /* Sidebar Resize Divider */
@@ -324,7 +342,7 @@ body {
 }
 
 .tree-item.multi-selected > .tree-item-content {
-  background: rgba(99, 102, 241, 0.3);
+  background: rgba(29, 58, 99, 0.45);
   color: var(--color-text-sidebar-active);
 }
 
@@ -405,6 +423,8 @@ body {
   margin-left: auto;
   flex-shrink: 0;
   padding-right: var(--space-1);
+  /* 增加与标签的间距，提升可读性 */
+  margin-left: 8px;
 }
 
 .tree-item.active > .tree-item-content .tree-descendant-count {
@@ -436,8 +456,8 @@ body {
   padding: var(--space-3) var(--space-6);
   background: var(--color-primary-subtle);
   border-bottom: 1px solid var(--color-border-light);
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow-x: visible;
   min-height: 36px;
 }
 
@@ -477,6 +497,75 @@ body {
   flex: 1;
   display: flex;
   align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* Markdown Format Toolbar */
+.md-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 2px;
+  background: var(--color-bg-hover-btn);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+
+.md-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-body);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.md-btn:hover:not(:disabled) {
+  background: var(--color-bg-selected);
+  color: var(--color-primary);
+}
+
+.md-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.md-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.md-btn-image {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+  margin-left: 2px;
+}
+
+.md-btn-image:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.md-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  margin: 0 3px;
+  flex-shrink: 0;
 }
 
 .toolbar-right {
@@ -486,42 +575,94 @@ body {
   justify-content: flex-end;
 }
 
-/* Highlight Input */
-.highlight-wrapper {
+/* Highlight Search — visually consistent with the Markdown toolbar */
+.highlight-toolbar {
   position: relative;
-  display: flex;
-  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
 }
 
 .highlight-icon {
   position: absolute;
-  left: var(--space-3);
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--color-text-muted);
   pointer-events: none;
+  flex-shrink: 0;
 }
 
 #highlight-input {
-  width: 240px;
-  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-7);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  width: 180px;
+  padding: 5px 8px 5px 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   font-size: var(--font-size-sm);
   font-family: var(--font-family);
-  outline: none;
-  transition: all var(--transition-fast);
   color: var(--color-text-body);
+  outline: none;
+  transition: background var(--transition-fast);
+}
+
+#highlight-input::placeholder {
+  color: var(--color-text-muted);
 }
 
 #highlight-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  background: var(--color-bg);
 }
 
-/* Save Status */
-.save-status {
-  font-size: var(--font-size-sm);
+/* prev / next navigation buttons (hidden until the input has content) */
+.hl-nav {
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
+.hl-nav svg {
+  display: block;
+}
+
+.hl-count {
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
-  min-width: 70px;
+  min-width: 40px;
+  padding: 0 2px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Save Status — green check + text indicator (fades in, then out after 10s) */
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-success);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.save-status.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.save-status .save-check {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+}
+
+.save-status .save-status-text {
+  line-height: 1;
 }
 
 /* Readonly Badge */
@@ -675,8 +816,8 @@ body {
 }
 
 #html-preview pre {
-  background: #1e293b;
-  color: #e2e8f0;
+  background: #13294b;
+  color: #e6edf5;
   padding: 16px;
   border-radius: var(--radius-md);
   overflow-x: auto;
@@ -739,23 +880,6 @@ body {
   background: var(--color-bg-hover-row);
 }
 
-.btn-save {
-  background: var(--color-primary);
-  color: var(--color-text-primary);
-  border-color: var(--color-primary);
-  font-weight: var(--font-weight-semibold);
-}
-
-.btn-save:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-.btn-save:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .btn-sm {
   padding: var(--space-2) var(--space-5);
   font-size: var(--font-size-sm);
@@ -806,6 +930,7 @@ body {
 }
 
 .modal {
+  /* 不透明背景兜底，避免 backdrop-filter 在某些渲染时序下出现内容穿透 */
   background: var(--color-bg-page);
   border-radius: var(--radius-xl);
   padding: var(--space-8);
@@ -814,6 +939,11 @@ body {
   animation: modalIn var(--transition-normal);
   max-height: 90vh;
   overflow-y: auto;
+  isolation: isolate;
+  /* 关键修复：确保模态框自身始终不透明，不受 overlay 动画影响 */
+  opacity: 1 !important;
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes modalIn {
@@ -893,7 +1023,7 @@ body {
 
 .modal input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px rgba(29, 58, 99, 0.15);
 }
 
 .btn-full {
@@ -918,6 +1048,24 @@ body {
   justify-content: center;
   margin-bottom: var(--space-6);
   color: var(--color-primary);
+}
+
+/* Two-tone text wordmark inside the auth modals (mirrors the topbar brand) */
+.auth-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--color-primary);
+  user-select: none;
+}
+
+.auth-brand-sub {
+  color: rgba(29, 58, 99, 0.55);
+  font-weight: 600;
 }
 
 .auth-error {
@@ -971,7 +1119,7 @@ body {
 
 .dialog-select:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px rgba(29, 58, 99, 0.15);
 }
 
 .recursive-label {
@@ -1156,6 +1304,11 @@ mark {
   padding: 1px 3px;
   border-radius: 2px;
   color: var(--color-text-body);
+}
+
+mark.mark-current {
+  background: var(--color-primary);
+  color: #ffffff;
 }
 
 /* --------------------------------------------------------------------------
@@ -1344,7 +1497,7 @@ mark {
 }
 
 .tree-item-content.drop-target {
-  background: rgba(99, 102, 241, 0.25) !important;
+  background: rgba(29, 58, 99, 0.3) !important;
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
   transition: background var(--transition-fast), outline var(--transition-fast);
@@ -1363,3 +1516,104 @@ mark {
 /* --------------------------------------------------------------------------
    TOASTUI EDITOR OVERRIDES (removed — using textarea + marked.js)
    -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   RESPONSIVE — Small screens
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 220px;
+    --topbar-height: 48px;
+    --toolbar-height: 48px;
+  }
+
+  #topbar {
+    padding: 0 var(--space-4);
+  }
+
+  .brand {
+    font-size: var(--font-size-md);
+  }
+
+  .user-info {
+    display: none;
+  }
+
+  #toolbar {
+    padding: 0 var(--space-4);
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  .toolbar-right {
+    gap: var(--space-2);
+  }
+
+  #highlight-input {
+    width: 140px;
+  }
+
+  #sidebar {
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+  }
+
+  .modal {
+    width: calc(100vw - var(--space-4) * 2);
+    max-width: var(--modal-width);
+    padding: var(--space-6);
+  }
+
+  .modal-wide {
+    width: calc(100vw - var(--space-4) * 2);
+    max-width: var(--modal-width-wide);
+  }
+
+  #split-editor {
+    flex-direction: column;
+  }
+
+  .split-pane {
+    flex: 1 1 50%;
+    min-height: 200px;
+  }
+
+  .split-divider {
+    width: 100%;
+    height: 6px;
+    cursor: row-resize;
+  }
+
+  .toast {
+    left: var(--space-4);
+    right: var(--space-4);
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --sidebar-width: 180px;
+  }
+
+  #toolbar {
+    height: auto;
+    min-height: var(--toolbar-height);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .toolbar-left {
+    width: 100%;
+    order: 2;
+  }
+
+  .toolbar-right {
+    width: 100%;
+    order: 1;
+    justify-content: space-between;
+  }
+
+  #highlight-input {
+    width: 130px;
+  }
+}

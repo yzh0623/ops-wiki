@@ -1,9 +1,5 @@
 '''
-Author: yuanzhenhui 
-Date: 2026-06-02 09:24:17
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-03 17:41:05
-FilePath: /ops_wiki/crypto.py
+加解密工具：RSA-2048 密钥对生成 + AES-256-GCM / RSA-OAEP 混合加密。
 '''
 from __future__ import annotations
 

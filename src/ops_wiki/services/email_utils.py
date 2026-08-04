@@ -1,17 +1,13 @@
 '''
-Author: yuanzhenhui 
-Date: 2026-06-02 09:56:54
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-03 17:41:43
-FilePath: /ops_wiki/email_utils.py
+邮件通知工具：从 Flask 配置读取 SMTP 参数，未配置时降级为日志记录。
 '''
-
 import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
+
 
 # 从 Flask 配置里读取 SMTP 参数
 def _get_smtp_config(app):

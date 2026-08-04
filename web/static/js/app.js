@@ -2,13 +2,8 @@
 
 const App = (() => {
   function init() {
-    bindSaveButton();
     bindKeyboard();
     bindDialogs();
-  }
-
-  function bindSaveButton() {
-    document.getElementById('btn-save').addEventListener('click', saveCurrentNode);
   }
 
   function bindKeyboard() {
@@ -20,37 +15,9 @@ const App = (() => {
     });
   }
 
-  async function saveCurrentNode() {
-    const nodeId = typeof WikiEditor !== 'undefined' ? WikiEditor.getCurrentNodeId() : null;
-    if (!nodeId) {
-      showToast('请先选择一个节点', 'error');
-      return;
-    }
-
-    const content = WikiEditor.getContent();
-
-    try {
-      const res = await fetch(`/api/nodes/${nodeId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
-
-      if (res.status === 403) {
-        showToast('你没有权限编辑此节点', 'error');
-        return;
-      }
-
-      if (res.ok) {
-        WikiEditor.markSaved();
-        showToast('已保存', 'success');
-      } else {
-        const data = await res.json();
-        showToast(data.error || '保存失败', 'error');
-      }
-    } catch (e) {
-      showToast('保存失败: ' + e.message, 'error');
-    }
+  // 保存逻辑已统一收敛到编辑器模块（含手动 Ctrl+S 与后台自动保存）
+  function saveCurrentNode() {
+    if (typeof WikiEditor !== 'undefined') WikiEditor.saveCurrentNode(false);
   }
 
   function getCurrentUserId() {

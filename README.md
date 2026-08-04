@@ -26,9 +26,10 @@ Ops Wiki 用来干什么？就是给团队搭一个内部知识库。树形结�
 - 分屏编辑：左侧 Markdown，右侧 HTML 实时预览，可拖拽分隔条调整比例
 - 拖拽吸附：分隔条拖到边缘自动切换为全屏 Markdown 或全屏预览
 - 双向滚动同步：Markdown 区滚动时 HTML 区自动跟随，反之亦然
-- 关键词高亮：工具栏输入框实时高亮预览中的匹配文本
-- Tab 键缩进、Ctrl+S 保存
-- 未保存修改离开页面会弹出提醒
+- 关键词高亮：工具栏输入框实时高亮预览中的匹配文本，并提供「上一条 / 下一条」快速跳转
+- Tab 键缩进、Ctrl/⌘+S 手动保存
+- 自动保存：停止编辑满 1 分钟后自动静默保存，编辑过程中不会触发；保存成功时工具栏右侧显示绿色对勾 + 文案（手动保存为「保存成功」，自动保存为「自动保存成功」），5 秒后淡出消失
+- 未保存的修改在离开页面时仍会弹出提醒
 
 ### 文件导入
 - 支持导入 .docx（Word）、.xlsx（Excel）、.txt、.md 及常见源代码文件
@@ -52,6 +53,11 @@ Ops Wiki 用来干什么？就是给团队搭一个内部知识库。树形结�
 - 第一个注册的用户自动成为管理员，后面的人注册需要审批
 - 管理员面板：查看所有用户（含注册时间、角色）、审批新用户、停用账户
 - 管理员不能停用自己的账号
+
+### 界面与主题
+- 藏蓝（Navy）+ 白的配色方案，专业简洁
+- 顶部以文字 Logo「Ops Wiki」替代原来的书籍图标
+- 统一为单一亮色主题，已取消亮 / 暗模式切换
 
 ### 其他
 - 全文搜索，实时过滤，支持按 document/article 类型筛选
@@ -91,51 +97,78 @@ export MAIL_PASSWORD=yourpassword
 
 ### 启动
 
+项目提供了 `run.sh` 一键脚本，使用 conda 的 `ops` 环境，日志输出到 `/Users/yuanzhenhui/Documents/document_file/tmp/ops-wiki`。
+
 ```bash
-python app.py
+# 启动（后台运行，开发模式 Flask 内置服务器）
+./run.sh start
+# 停止
+./run.sh stop
+# 重启
+./run.sh restart
+# 查看状态
+./run.sh status
 ```
 
-默认监听 `0.0.0.0:5100`。浏览器打开 `http://localhost:5100` 就能看到页面了。
+默认监听 `0.0.0.0:5100`。浏览器打开 `http://localhost:5100` 就能看到页面了。日志文件位于 `/Users/yuanzhenhui/Documents/document_file/tmp/ops-wiki/ops-wiki.log`。
 
 第一个注册的账号自动是管理员。后面注册的账号需要管理员在后台审批才能登录。
 
-生产环境别用 Flask 自带的 dev server，上 gunicorn：
+生产环境使用 gunicorn（先把 `OPS_WIKI_MODE` 设为 gunicorn）：
 
 ```bash
-gunicorn -w 4 -b 0.0.0.0:5100 app:create_app()
+OPS_WIKI_MODE=gunicorn ./run.sh start
+# 或手动：
+gunicorn -w 4 -b 0.0.0.0:5100 wsgi:app
+```
+
+如需自定义日志目录，设置环境变量 `LOG_DIR`：
+
+```bash
+LOG_DIR=/your/path ./run.sh start
 ```
 
 ## 项目结构
 
-几个重要的文件：
+按用途归类后的结构：后端 Python 代码统一放在 `src/ops_wiki/` 包内并进一步按职责拆成子包（core / models / routes / services），前端资源放在 `web/`，运行时数据与日志落在仓库外的个人数据目录。
 
 ```
-ops_wiki/
-├── app.py              # 应用入口，组装 Flask 应用、挂载图片静态路由
-├── config.py           # 配置，SECRET_KEY、数据库、SMTP 都在这
-├── extensions.py       # db 和 login_manager 实例
-├── models.py           # User、Node、NodePermission 三个模型
-├── auth.py             # 注册（含 RSA 密钥生成）、登录、登出、session 检查
-├── views.py            # 文档 CRUD、树、搜索、导入、分享、转让、批量授权
-├── admin.py            # 管理员：用户审批、停用、用户列表
-├── crypto.py           # AES-256-GCM + RSA-2048 混合加密/解密
-├── email_utils.py      # 邮件通知，没配 SMTP 就只打日志
-├── decorators.py       # 装饰器（管理员权限校验等）
-├── requirements.txt
-├── templates/
-│   └── index.html      # 单页应用入口，所有 UI 组件都在一个 HTML 里
-├── static/
-│   ├── css/
-│   │   └── style.css   # 全局样式
-│   └── js/
-│       ├── marked.min.js  # Markdown 解析器（第三方库）
-│       ├── api.js         # 统一 HTTP 客户端（fetch 封装、401 处理）
-│       ├── auth.js        # 登录/注册/登出/session 管理
-│       ├── editor.js      # 分屏编辑器、滚动同步、关键词高亮、分隔条拖拽
-│       ├── tree.js        # 文档树渲染、拖拽、右键菜单、多选、批量导入
-│       └── app.js         # 主控制器 + 管理面板 + 对话框逻辑
-└── images/              # Word 导入时提取的图片（运行时自动创建）
+ops-wiki/
+├── run.sh                  # 一键启动/停止/重启/状态脚本（start|stop|restart|status）
+├── wsgi.py                 # WSGI 入口，配置日志输出 + 应用工厂
+├── requirements.txt        # 依赖（含 gunicorn 生产模式）
+├── src/
+│   └── ops_wiki/           # 后端 Python 包（按用途归类为 4 个子包）
+│       ├── core/           # 应用装配与配置
+│       │   ├── app.py          # 应用入口：组装 Flask 应用、注册蓝图、图片路由
+│       │   ├── config.py       # 配置：SECRET_KEY、数据库、SMTP、图片目录
+│       │   └── extensions.py   # 扩展实例：db、login_manager
+│       ├── models/         # 数据模型
+│       │   └── models.py       # User、Node、NodePermission
+│       ├── routes/         # 蓝图路由（按业务入口划分）
+│       │   ├── auth.py         # 认证：注册/登录/登出/session（含 RSA 密钥生成）
+│       │   ├── views.py        # 主 API：节点 CRUD、树、搜索、导入、分享、转让、图片上传
+│       │   └── admin.py        # 管理：用户审批、停用、列表
+│       └── services/       # 安全与横切工具
+│           ├── crypto.py       # 加解密：AES-256-GCM + RSA-2048 混合加密
+│           ├── email_utils.py  # 邮件通知（无 SMTP 时降级为日志）
+│           └── decorators.py   # 装饰器：管理员权限校验
+├── web/                    # 前端资源
+│   ├── templates/
+│   │   ├── index.html      # 单页应用入口
+│   │   └── img/qrcode.jpg  # 赞赏码
+│   └── static/
+│       ├── css/style.css   # 全局样式
+│       └── js/             # 前端逻辑（api/auth/editor/tree/app + marked.min）
+└── （仓库外）~/Documents/document_file/myself/knowledge/
+    ├── db/wiki.sqlite      # SQLite 数据库（自动创建，不进 git）
+    ├── imgs/               # 上传/导入图片（自动创建，不进 git）
+    └── （日志）tmp/ops-wiki/ops-wiki.log
 ```
+
+### 目录划分原则
+
+后端按"技术层 + 业务域"双重维度归类：`core` 放应用装配与全局配置、`models` 放数据模型、`routes` 放对外 API 蓝图、`services` 放加密/通知/权限等可复用的横切能力。前端资源与后端代码分离到 `web/`，个人数据资产（数据库、图片、日志）全部放在仓库外的 `~/Documents/document_file/myself/knowledge/` 下，绝不随代码提交到 GitLab。
 
 ## API 概览
 

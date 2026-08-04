@@ -1,29 +1,34 @@
 '''
-Author: yuanzhenhui 
-Date: 2026-06-02 08:36:09
-LastEditors: yuanzhenhui 
-LastEditTime: 2026-06-03 17:39:55
-FilePath: /ops_wiki/app.py
-'''
+应用入口：组装 Flask 应用、注册蓝图、挂载图片静态路由。
 
+项目按用途划分：
+    src/ops_wiki/
+        core/      应用装配、配置、扩展实例
+        models/    数据模型
+        routes/    蓝图路由（auth、views、admin）
+        services/  安全与横切工具（crypto、邮件、权限装饰器）
+    web/           前端资源（templates、static）
+'''
 import os
 
-from flask import Flask
-from extensions import db, login_manager
+from flask import Flask, send_from_directory
 
-# 创建并配置 Flask 应用
+from .extensions import db, login_manager
+from .config import Config
+
+
 def create_app() -> Flask:
-    app = Flask(__name__)
-    app.config.from_object('config.Config')
+    app = Flask(
+        __name__,
+        template_folder=os.path.join(Config.WEB_DIR, 'templates'),
+        static_folder=os.path.join(Config.WEB_DIR, 'static'),
+    )
+    app.config.from_object(Config)
 
-    # 挂载 images 目录，通过 /images/ 访问静态图片
-    _basedir = os.path.abspath(os.path.dirname(__file__))
-    images_dir = os.path.join(_basedir, 'images')
+    # 挂载图片目录，通过 /images/ 访问静态图片（统一存到个人数据资产的 imgs 目录）
+    images_dir = app.config['IMAGES_DIR']
     os.makedirs(images_dir, exist_ok=True)
 
-    from flask import send_from_directory
-
-    # 图片文件路由
     @app.route('/images/<path:filename>')
     def serve_image(filename):
         return send_from_directory(images_dir, filename)
@@ -32,10 +37,9 @@ def create_app() -> Flask:
     login_manager.init_app(app)
     login_manager.login_view = None  # JSON API，关掉 Flask-Login 默认跳转
 
-    # 从 session 恢复用户对象
     @login_manager.user_loader
     def load_user(user_id):
-        from models import User
+        from ..models import User
         return User.query.get(int(user_id))
 
     # SQLite 默认不开启外键约束，手动打开
@@ -45,9 +49,9 @@ def create_app() -> Flask:
         def _set_sqlite_pragma(dbapi_conn, _):
             dbapi_conn.execute('PRAGMA foreign_keys=ON')
 
-    from auth import auth_bp
-    from views import views_bp
-    from admin import admin_bp
+    from ..routes.auth import auth_bp
+    from ..routes.views import views_bp
+    from ..routes.admin import admin_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(views_bp, url_prefix='/api')

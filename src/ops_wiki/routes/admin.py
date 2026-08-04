@@ -1,16 +1,11 @@
 '''
-Author: yuanzhenhui
-Date: 2026-06-03 16:12:20
-LastEditors: yuanzhenhui
-LastEditTime: 2026-06-03 17:39:14
-FilePath: /ops_wiki/admin.py
+管理员蓝图：用户审批、停用、用户列表。
 '''
-
 from flask import Blueprint, jsonify
 from flask_login import current_user
-from extensions import db
-from models import User
-from decorators import admin_required
+from ..core.extensions import db
+from ..models import User
+from ..services.decorators import admin_required
 
 admin_bp = Blueprint('admin', __name__)
 
