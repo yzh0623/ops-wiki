@@ -111,6 +111,60 @@ const WikiEditor = (() => {
 
   // ─── Markdown → HTML via marked.js ───
 
+  // LaTeX 数学公式：注册 marked 扩展，借助 KaTeX 在解析阶段直接渲染。
+  // 该扩展运行在代码块 / 行内代码之后，因此正文中出现的 $ 不会与代码里的 $
+  // 冲突；公式内部的下划线、星号等也不会被 marked 当作强调处理。
+  function initMathExtension() {
+    if (typeof marked === 'undefined' || marked.__mathExtInstalled) return;
+    marked.use({
+      extensions: [
+        {
+          name: 'blockMath',
+          level: 'block',
+          start(src) { return src.indexOf('$$'); },
+          tokenizer(src) {
+            const m = /^\$\$([\s\S]+?)\$\$/.exec(src);
+            if (m) {
+              return { type: 'blockMath', raw: m[0], text: m[1].trim() };
+            }
+          },
+          renderer(token) {
+            try {
+              if (typeof katex !== 'undefined') {
+                return katex.renderToString(token.text, { displayMode: true, throwOnError: false });
+              }
+            } catch (e) { /* 降级为纯文本 */ }
+            return '<pre class="math-fallback">' + token.text + '</pre>';
+          },
+        },
+        {
+          name: 'inlineMath',
+          level: 'inline',
+          start(src) { const i = src.indexOf('$'); return i < 0 ? undefined : i; },
+          tokenizer(src) {
+            // 行内 $$ ... $$（单行展示公式）
+            let m = /^\$\$(?!\s)([\s\S]+?)(?<!\s)\$\$/.exec(src);
+            if (m) return { type: 'inlineMath', raw: m[0], text: m[1].trim(), display: true };
+            // 行内 $ ... $
+            m = /^\$(?!\s)((?:\\.|[^\\$])+?)(?<!\s)\$/.exec(src);
+            if (m) return { type: 'inlineMath', raw: m[0], text: m[1].trim(), display: false };
+          },
+          renderer(token) {
+            try {
+              if (typeof katex !== 'undefined') {
+                return katex.renderToString(token.text, { displayMode: !!token.display, throwOnError: false });
+              }
+            } catch (e) { /* 降级为纯文本 */ }
+            return (token.display ? '$$' : '$') + token.text + (token.display ? '$$' : '$');
+          },
+        },
+      ],
+    });
+    marked.__mathExtInstalled = true;
+  }
+
+  initMathExtension();
+
   function markdownToHtml(md) {
     if (typeof marked !== 'undefined') {
       try {
@@ -123,9 +177,56 @@ const WikiEditor = (() => {
     return (md || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
   }
 
+  // ─── Mermaid 图表渲染（marked 解析后，对 ```mermaid 代码块做后处理）───
+  let mermaidReady = false;
+  let mermaidTimer = null;
+
+  function scheduleMermaid() {
+    if (typeof mermaid === 'undefined') return;
+    if (mermaidTimer) clearTimeout(mermaidTimer);
+    // 轻微防抖，避免连续输入时反复重绘大图
+    mermaidTimer = setTimeout(() => renderMermaidNow(HTML_PREVIEW), 180);
+  }
+
+  function renderMermaidNow(root) {
+    if (typeof mermaid === 'undefined' || !root) return;
+    const blocks = root.querySelectorAll('pre > code.language-mermaid');
+    if (!blocks.length) return;
+    if (!mermaidReady) {
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'loose',
+          theme: 'base',
+          fontFamily: 'inherit',
+        });
+      } catch (e) { /* 忽略初始化错误 */ }
+      mermaidReady = true;
+    }
+    blocks.forEach((codeEl) => {
+      const pre = codeEl.parentElement;
+      if (!pre || pre.dataset.mermaidDone) return;
+      pre.dataset.mermaidDone = '1';
+      const src = codeEl.textContent;
+      const id = 'mmd-' + Math.random().toString(36).slice(2, 10);
+      mermaid.render(id, src).then(({ svg }) => {
+        const host = document.createElement('div');
+        host.className = 'mermaid-block';
+        host.innerHTML = svg;
+        if (pre.parentNode) pre.replaceWith(host);
+      }).catch(() => {
+        const err = document.createElement('pre');
+        err.className = 'mermaid-error';
+        err.textContent = 'Mermaid 渲染失败：\n' + src;
+        if (pre.parentNode) pre.replaceWith(err);
+      });
+    });
+  }
+
   function syncHtmlPreview() {
     const md = MARKDOWN_EDITOR.value || '';
     HTML_PREVIEW.innerHTML = markdownToHtml(md);
+    scheduleMermaid();
   }
 
   // ─── Bidirectional Scroll Sync ───
@@ -664,6 +765,7 @@ const WikiEditor = (() => {
       hlMatchCount = 0;
       hlMatchIndex = 0;
       HTML_PREVIEW.innerHTML = baseHtml;
+      scheduleMermaid();
       updateHlNav();
       return;
     }
@@ -674,6 +776,7 @@ const WikiEditor = (() => {
     if (resetIndex) hlMatchIndex = 0;
     if (hlMatchIndex >= hlMatchCount) hlMatchIndex = 0;
     HTML_PREVIEW.innerHTML = baseHtml.replace(regex, '<mark>$1</mark>');
+    scheduleMermaid();
     updateHlNav();
     if (scroll) scrollToCurrentMatch();
   }

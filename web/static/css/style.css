@@ -869,6 +869,38 @@ body {
   border-radius: var(--radius-sm);
 }
 
+/* Mermaid 图表：自适应宽度，随容器缩放，避免横向滚动条 */
+#html-preview .mermaid-block {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  overflow-x: auto;
+}
+#html-preview .mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+#html-preview .mermaid-error {
+  background: #fff0f0;
+  border: 1px solid #f5c2c2;
+  color: #b42318;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  font-size: var(--font-size-sm);
+  overflow-x: auto;
+}
+/* KaTeX 公式渲染失败时的纯文本降级展示 */
+#html-preview .math-fallback {
+  background: #fff8e6;
+  border: 1px dashed #e0c068;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
 /* --------------------------------------------------------------------------
    BUTTONS
    -------------------------------------------------------------------------- */
