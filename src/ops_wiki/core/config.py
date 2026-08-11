@@ -11,7 +11,7 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 # 个人数据资产根目录（不进 git，避免私人数据上传到第三方代码仓库）
 _ASSET_ROOT = "/Users/yuanzhenhui/Documents/document_file/myself/knowledge"
 # SQLite 数据库固定存放路径
-_DB_DIR = os.path.join(_ASSET_ROOT, 'db')
+_DB_DIR = os.path.join(_ASSET_ROOT, 'db', 'ops-wiki')
 # 上传/导入图片固定存放路径
 _IMAGES_DIR = os.path.join(_ASSET_ROOT, 'imgs')
 os.makedirs(_DB_DIR, exist_ok=True)
