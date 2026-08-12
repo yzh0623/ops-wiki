@@ -4,6 +4,8 @@ const WikiEditor = (() => {
   let currentNodeId = null;
   let isDirty = false;
   let isOwner = false;
+  let currentLocked = false;  // 当前加载文章是否处于锁定状态
+  let unlockedViewing = false; // 是否已输入正确密码、临时解锁查看（仅此状态下才提供「解除锁定」选项）
   let contentBackup = '';
   let saveIndicatorToken = 0;   // 用于取消过期提示的淡出
   let saveIndicatorTimer = null;
@@ -25,6 +27,23 @@ const WikiEditor = (() => {
   const HL_COUNT = document.getElementById('hl-count');
   const SHARE_BAR = document.getElementById('share-bar');
   const MD_TOOLBAR = document.getElementById('md-toolbar');
+  const LOCK_OVERLAY = document.getElementById('lock-overlay');
+  const LOCK_BTN = document.getElementById('btn-lock');
+  const UNLOCK_FORM = document.getElementById('unlock-form');
+  const UNLOCK_PWD = document.getElementById('unlock-password');
+  const UNLOCK_ERROR = document.getElementById('unlock-error');
+  const LOCK_DIALOG = document.getElementById('lock-dialog');
+  const LOCK_ENABLE_VIEW = document.getElementById('lock-enable-view');
+  const LOCK_ENABLED_VIEW = document.getElementById('lock-enabled-view');
+  const LOCK_DIALOG_TITLE = document.getElementById('lock-dialog-title');
+  const LOCK_PWD = document.getElementById('lock-pwd');
+  const LOCK_PWD_CONFIRM = document.getElementById('lock-pwd-confirm');
+  const LOCK_PWD_HINT = document.getElementById('lock-pwd-hint');
+  const LOCK_NEW_PWD = document.getElementById('lock-new-pwd');
+  const LOCK_NEW_PWD_CONFIRM = document.getElementById('lock-new-pwd-confirm');
+  const LOCK_NEW_PWD_HINT = document.getElementById('lock-new-pwd-hint');
+  const BTN_LOCK_SAVE = document.getElementById('btn-lock-save');
+  const BTN_LOCK_UNLOCK = document.getElementById('btn-lock-unlock');
 
   // 高亮搜索的匹配导航状态
   let hlKeyword = '';
@@ -316,6 +335,7 @@ const WikiEditor = (() => {
     initImageInsert();
     initMarkdownToolbar();
     initSelectionTracking();
+    initLockUI();
   }
 
   // 记录光标位置，点击工具栏按钮时 textarea 会失焦，需在 blur 前保存
@@ -579,12 +599,14 @@ const WikiEditor = (() => {
     isOwner = false;
     SPLIT_EDITOR.style.display = 'none';
     PLACEHOLDER.style.display = 'flex';
+    LOCK_OVERLAY.style.display = 'none';
     SHARE_BAR.style.display = 'none';
     SHARE_BAR.innerHTML = '';
     setMdToolbarEnabled(false);
     READONLY_BADGE.style.display = 'none';
     MARKDOWN_PANE.style.display = '';
     DIVIDER.style.display = '';
+    if (LOCK_BTN) LOCK_BTN.style.display = 'none';
     HIGHLIGHT_INPUT.value = '';
     hlKeyword = '';
     hlMatchCount = 0;
@@ -604,16 +626,48 @@ const WikiEditor = (() => {
     }
   }
 
-  function loadContent(nodeId, markdown, grantees, ownerFlag) {
+  function loadContent(nodeId, markdown, grantees, ownerFlag, lockedFlag, unlockedFlag) {
     currentNodeId = nodeId;
     isDirty = false;
     isOwner = !!ownerFlag;
+    currentLocked = !!lockedFlag;
+    unlockedViewing = !!unlockedFlag;
     contentBackup = markdown || '';
     resetSaveIndicator();
     clearAutoSaveTimer();
 
+    // 锁定文章：显示密码解锁遮罩，不展示内容；只有显式传入 unlocked=true（如刚成功解锁）才展示
+    if (lockedFlag && !unlockedFlag) {
+      PLACEHOLDER.style.display = 'none';
+      SPLIT_EDITOR.style.display = 'none';
+      LOCK_OVERLAY.style.display = 'flex';
+      UNLOCK_ERROR.textContent = '';
+      UNLOCK_PWD.value = '';
+      HIGHLIGHT_INPUT.value = '';
+      hlKeyword = '';
+      hlMatchCount = 0;
+      hlMatchIndex = 0;
+      updateHlNav();
+      // 锁定状态下禁用编辑工具栏与文本框，避免误改隐藏内容
+      setMdToolbarEnabled(false);
+      if (BTN_INSERT_IMAGE) BTN_INSERT_IMAGE.style.display = 'none';
+      MARKDOWN_EDITOR.value = '';
+      MARKDOWN_EDITOR.readOnly = true;
+      READONLY_BADGE.style.display = 'none';
+      SHARE_BAR.style.display = 'none';
+      SHARE_BAR.innerHTML = '';
+      // 锁定状态下：尚未输入密码临时解锁查看前，不显示锁定管理按钮，
+      // 避免在未解锁时就能看到「解除锁定」选项（逻辑不通）
+      if (LOCK_BTN) {
+        LOCK_BTN.style.display = (isOwner && unlockedViewing) ? '' : 'none';
+        updateLockButton(true, unlockedViewing);
+      }
+      return;
+    }
+
     // Show split editor
     PLACEHOLDER.style.display = 'none';
+    LOCK_OVERLAY.style.display = 'none';
     SPLIT_EDITOR.style.display = 'flex';
 
     // Set textarea content and readonly state
@@ -638,6 +692,12 @@ const WikiEditor = (() => {
       DIVIDER.style.display = '';
       setMdToolbarEnabled(true);
       READONLY_BADGE.style.display = 'none';
+    }
+
+    // 锁定状态按钮：仅文章所有者可见
+    if (LOCK_BTN) {
+      LOCK_BTN.style.display = isOwner ? '' : 'none';
+      updateLockButton(!!lockedFlag, unlockedViewing);
     }
 
     // Render HTML preview (clear any previous highlight marks)
@@ -669,6 +729,193 @@ const WikiEditor = (() => {
 
   function getContent() {
     return MARKDOWN_EDITOR.value || '';
+  }
+
+  // ─── Password Lock ───
+
+  // 更新工具栏锁定按钮图标与提示（区分「已锁定」「临时解锁查看中」「未锁定」）
+  function updateLockButton(locked, unlockedViewing) {
+    if (!LOCK_BTN) return;
+    const openIcon = LOCK_BTN.querySelector('.lock-open');
+    const closedIcon = LOCK_BTN.querySelector('.lock-closed');
+    if (openIcon) openIcon.style.display = locked ? 'none' : '';
+    if (closedIcon) closedIcon.style.display = locked ? '' : 'none';
+    if (!locked) {
+      LOCK_BTN.title = '密码锁定（点击设置）';
+    } else if (unlockedViewing) {
+      LOCK_BTN.title = '已锁定（临时解锁查看中，点击可真正解锁）';
+    } else {
+      LOCK_BTN.title = '已锁定（点击管理）';
+    }
+  }
+
+  // 提交密码解锁（仅临时查看，下次打开仍需密码）
+  async function handleUnlockSubmit(e) {
+    if (e) e.preventDefault();
+    if (!currentNodeId) return;
+    const pwd = (UNLOCK_PWD.value || '');
+    if (!pwd) {
+      UNLOCK_ERROR.textContent = '请输入密码';
+      return;
+    }
+    try {
+      const res = await fetch(`/api/nodes/${currentNodeId}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        currentLocked = true; // 文章本身仍然锁定，只是本次临时查看
+        // 解锁成功后加载内容（仅临时查看，文章仍锁定）
+        loadContent(currentNodeId, data.content || '', data.grantees || [], data.is_owner, true, true);
+        updateLockButton(true, true); // 标记为「临时解锁查看中」
+        if (typeof Tree !== 'undefined' && Tree.loadTree) Tree.loadTree();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        UNLOCK_ERROR.textContent = d.error || '密码错误';
+      }
+    } catch (err) {
+      UNLOCK_ERROR.textContent = '网络错误: ' + err.message;
+    }
+  }
+
+  // 打开锁定设置弹窗（根据当前锁定状态切换两种视图）
+  function openLockDialog() {
+    if (!LOCK_DIALOG || !currentNodeId) return;
+    if (LOCK_PWD) LOCK_PWD.value = '';
+    if (LOCK_PWD_CONFIRM) LOCK_PWD_CONFIRM.value = '';
+    if (LOCK_NEW_PWD) LOCK_NEW_PWD.value = '';
+    if (LOCK_NEW_PWD_CONFIRM) LOCK_NEW_PWD_CONFIRM.value = '';
+    UNLOCK_ERROR.textContent = '';
+    if (LOCK_PWD_HINT) LOCK_PWD_HINT.textContent = '密码将用于加密保护此文章。';
+
+    if (currentLocked && unlockedViewing) {
+      // 已锁定且已临时解锁查看：显示「解除锁定 / 修改密码」视图
+      if (LOCK_ENABLE_VIEW) LOCK_ENABLE_VIEW.style.display = 'none';
+      if (LOCK_ENABLED_VIEW) LOCK_ENABLED_VIEW.style.display = '';
+      if (LOCK_DIALOG_TITLE) LOCK_DIALOG_TITLE.textContent = '密码锁定管理';
+    } else if (currentLocked && !unlockedViewing) {
+      // 尚未输入密码解锁查看，不应该出现「解除锁定」选项，直接关闭弹窗
+      LOCK_DIALOG.style.display = 'none';
+      return;
+    } else {
+      // 未锁定：显示「启用锁定」视图
+      if (LOCK_ENABLED_VIEW) LOCK_ENABLED_VIEW.style.display = 'none';
+      if (LOCK_ENABLE_VIEW) LOCK_ENABLE_VIEW.style.display = '';
+      if (LOCK_DIALOG_TITLE) LOCK_DIALOG_TITLE.textContent = '密码锁定设置';
+    }
+    LOCK_DIALOG.style.display = 'flex';
+  }
+
+  // 保存「启用锁定」或「修改密码」（文章保持锁定）
+  async function handleLockSave() {
+    if (!currentNodeId || !isOwner) return;
+    const pwd = (LOCK_PWD.value || '').trim();
+    const confirm = (LOCK_PWD_CONFIRM.value || '').trim();
+    const newPwd = (LOCK_NEW_PWD.value || '').trim();
+    const newConfirm = (LOCK_NEW_PWD_CONFIRM.value || '').trim();
+
+    if (!currentLocked) {
+      // 启用锁定：必须设置密码
+      if (!pwd) {
+        showToast('请设置密码', 'error');
+        return;
+      }
+      if (pwd !== confirm) {
+        showToast('两次输入的密码不一致', 'error');
+        return;
+      }
+      const payload = { is_locked: true, lock_password: pwd };
+      try {
+        const res = await fetch(`/api/nodes/${currentNodeId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          showToast(d.error || '操作失败', 'error');
+          return;
+        }
+        const data = await res.json();
+        currentLocked = !!data.locked;
+        LOCK_DIALOG.style.display = 'none';
+        updateLockButton(currentLocked, false);
+        showToast('已启用密码锁定', 'success');
+        // 启用锁定后立即显示解锁遮罩，需输入刚设置的密码才能继续查看/编辑
+        loadContent(currentNodeId, '', [], isOwner, true, false);
+      } catch (err) {
+        showToast('操作失败: ' + err.message, 'error');
+      }
+      return;
+    }
+
+    // 已锁定状态下修改密码
+    if (newPwd && newPwd !== newConfirm) {
+      showToast('两次输入的新密码不一致', 'error');
+      return;
+    }
+    const payload = { is_locked: true };
+    if (newPwd) payload.lock_password = newPwd;
+    try {
+      const res = await fetch(`/api/nodes/${currentNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        showToast(d.error || '操作失败', 'error');
+        return;
+      }
+      LOCK_DIALOG.style.display = 'none';
+      showToast(newPwd ? '密码已更新' : '未修改密码', 'success');
+    } catch (err) {
+      showToast('操作失败: ' + err.message, 'error');
+    }
+  }
+
+  // 真正解除锁定（以后打开无需密码）
+  async function handleUnlockSave() {
+    if (!currentNodeId || !isOwner) return;
+    try {
+      const res = await fetch(`/api/nodes/${currentNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_locked: false }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        showToast(d.error || '操作失败', 'error');
+        return;
+      }
+      const data = await res.json();
+      currentLocked = false;
+      LOCK_DIALOG.style.display = 'none';
+      updateLockButton(false, false);
+      showToast('已解除锁定', 'success');
+      // 解除锁定：刷新内容并移除树锁图标
+      loadContent(currentNodeId, data.content || '', [], isOwner, false, false);
+      if (typeof Tree !== 'undefined' && Tree.loadTree) Tree.loadTree();
+    } catch (err) {
+      showToast('操作失败: ' + err.message, 'error');
+    }
+  }
+
+  function initLockUI() {
+    if (UNLOCK_FORM) UNLOCK_FORM.addEventListener('submit', handleUnlockSubmit);
+    if (LOCK_BTN) LOCK_BTN.addEventListener('click', openLockDialog);
+    if (BTN_LOCK_SAVE) BTN_LOCK_SAVE.addEventListener('click', handleLockSave);
+    const lockSaveNewBtn = document.getElementById('btn-lock-save-new');
+    if (lockSaveNewBtn) lockSaveNewBtn.addEventListener('click', handleLockSave);
+    if (BTN_LOCK_UNLOCK) BTN_LOCK_UNLOCK.addEventListener('click', handleUnlockSave);
+    // 点击遮罩空白处不关闭锁定设置弹窗
+    if (LOCK_DIALOG) {
+      LOCK_DIALOG.addEventListener('click', (e) => {
+        if (e.target === LOCK_DIALOG) LOCK_DIALOG.style.display = 'none';
+      });
+    }
   }
 
   function getHtml() {
@@ -855,7 +1102,7 @@ const WikiEditor = (() => {
   initDividerDrag();
   initScrollSync();
 
-  return { showPlaceholder, loadContent, getContent, getHtml, saveCurrentNode: performSave, isUnsaved, getCurrentNodeId };
+  return { showPlaceholder, loadContent, getContent, getHtml, saveCurrentNode: performSave, isUnsaved, getCurrentNodeId, openLockDialog };
 })();
 
 function showToast(message, type) {

@@ -49,6 +49,8 @@ class Node(db.Model):
     type = db.Column(db.String(20), default='document')
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
     encrypted_key = db.Column(db.Text, nullable=True)  # AES密钥用所有者RSA公钥加密(base64)，None=旧数据明文
+    is_locked = db.Column(db.Boolean, default=False, nullable=False)  # 是否启用密码锁定
+    lock_password_hash = db.Column(db.Text, nullable=True)  # 锁定密码哈希（werkzeug pbkdf2），未锁定为 None
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(

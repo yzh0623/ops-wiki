@@ -134,7 +134,7 @@ const App = (() => {
           if (nodeRes.ok) {
             const node = await nodeRes.json();
             if (typeof WikiEditor !== 'undefined') {
-              WikiEditor.loadContent(activeId, node.content || '', node.grantees || [], node.is_owner);
+              WikiEditor.loadContent(activeId, node.content || "", node.grantees || [], node.is_owner, node.locked, node.unlocked);
             }
           }
         } catch (_) {}
@@ -177,7 +177,7 @@ const App = (() => {
           if (nodeRes.ok) {
             const node = await nodeRes.json();
             if (typeof WikiEditor !== 'undefined') {
-              WikiEditor.loadContent(activeId, node.content || '', node.grantees || [], node.is_owner);
+              WikiEditor.loadContent(activeId, node.content || "", node.grantees || [], node.is_owner, node.locked, node.unlocked);
             }
           }
         } catch (_) {}

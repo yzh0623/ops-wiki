@@ -679,6 +679,169 @@ body {
   white-space: nowrap;
 }
 
+/* Lock Toolbar Button — use higher specificity to override .btn/.btn-sm defaults */
+.btn.btn-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.btn.btn-lock:hover {
+  background: var(--color-bg-hover-btn);
+  color: var(--color-primary);
+}
+.btn.btn-lock .lock-closed {
+  color: var(--color-primary);
+}
+
+/* Tree Lock Icon */
+.tree-lock-icon {
+  color: var(--color-primary);
+}
+.tree-item.active > .tree-item-content .tree-lock-icon {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Lock Overlay (password gate) */
+.lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--color-bg-page);
+  z-index: 5;
+}
+.lock-card {
+  width: 360px;
+  max-width: calc(100% - 32px);
+  text-align: center;
+  padding: var(--space-8);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-surface, #fff);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg, 0 10px 30px rgba(19, 41, 75, 0.12));
+}
+.lock-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-4);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+.lock-card h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-lg);
+  color: var(--color-text);
+}
+.lock-card p {
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+.lock-card .lock-form {
+  width: 100%;
+}
+.lock-card .form-field {
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+.lock-card input[type="password"] {
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  font-family: var(--font-family);
+  box-sizing: border-box;
+  outline: none;
+  color: var(--color-text-body);
+  background: var(--color-bg-surface, #fff);
+  transition: all var(--transition-fast);
+}
+.lock-card input[type="password"]:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(29, 58, 99, 0.15);
+}
+.lock-foot {
+  margin: var(--space-5) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-placeholder);
+  line-height: 1.5;
+}
+.lock-error {
+  margin: var(--space-3) 0 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  min-height: 1em;
+}
+
+/* Lock Dialog — dual view (enable / manage) */
+#lock-dialog .modal {
+  width: 400px;
+  max-width: calc(100% - 32px);
+}
+.lock-status-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.lock-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
+}
+.lock-divider::before,
+.lock-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+.lock-advanced > summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  list-style: none;
+  user-select: none;
+}
+.lock-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.lock-advanced > summary::before {
+  content: '▸ ';
+}
+.lock-advanced[open] > summary::before {
+  content: '▾ ';
+}
+.lock-advanced > summary:hover {
+  color: var(--color-primary);
+}
+
+
 /* Editor Container */
 #editor-container {
   flex: 1;

@@ -59,8 +59,27 @@ def create_app() -> Flask:
 
     with app.app_context():
         db.create_all()
+        # 兼容旧库：自动补齐新增列（SQLite 不支持一次性 ALTER 多列，逐列处理）
+        _migrate_schema()
 
     return app
+
+
+# 旧数据库 schema 迁移：为已存在的 node 表补齐锁定相关字段
+def _migrate_schema() -> None:
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(db.engine)
+    if 'node' not in inspector.get_table_names():
+        return
+    existing = {c['name'] for c in inspector.get_columns('node')}
+    migrations = {
+        'is_locked': 'BOOLEAN NOT NULL DEFAULT 0',
+        'lock_password_hash': 'TEXT',
+    }
+    for col, ddl in migrations.items():
+        if col not in existing:
+            with db.engine.begin() as conn:
+                conn.execute(db.text(f'ALTER TABLE node ADD COLUMN {col} {ddl}'))
 
 
 # 生产环境请用 gunicorn/uWSGI，别在 0.0.0.0 上开 debug

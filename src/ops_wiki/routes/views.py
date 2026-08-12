@@ -8,6 +8,7 @@ import os
 
 from flask import Blueprint, request, jsonify, render_template, current_app
 from flask_login import login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from ..core.extensions import db
 from ..models import Node, User, NodePermission as NodePerm
@@ -68,6 +69,7 @@ def _node_dict(node: Node) -> dict:
         'type': node.type,
         'owner_id': node.owner_id,
         'sort_order': node.sort_order,
+        'is_locked': bool(node.is_locked),
         'created_at': node.created_at.isoformat() if node.created_at else None,
         'updated_at': node.updated_at.isoformat() if node.updated_at else None,
     }
@@ -124,6 +126,10 @@ def create_node():
 
     content = data.get('content', '')
 
+    # 创建时可选启用密码锁定（article 类型才允许）
+    want_lock = bool(data.get('is_locked')) and type_ == 'article'
+    lock_pwd = (data.get('lock_password') or '').strip() if want_lock else ''
+
     node = Node(
         title=title,
         parent_id=parent_id,
@@ -132,6 +138,13 @@ def create_node():
         content=content,
         owner_id=current_user.id,
     )
+
+    # 启用锁定必须设置密码
+    if want_lock:
+        if not lock_pwd:
+            return jsonify({'error': '启用锁定必须设置密码'}), 400
+        node.is_locked = True
+        node.lock_password_hash = generate_password_hash(lock_pwd)
 
     # article 类型的内容用 RSA 混合加密存储
     if type_ == 'article' and content and current_user.rsa_public_key:
@@ -166,6 +179,18 @@ def get_node(node_id):
     if not _can_access(node, current_user):
         return jsonify({'error': '无权访问此节点'}), 404
 
+    data['owner_id'] = node.owner_id
+    data['is_owner'] = (node.owner_id == current_user.id)
+    data['locked'] = bool(node.is_locked)
+    data['unlocked'] = False  # 锁定严格生效，每次打开都需输入密码；解锁仅用于本次响应，不跨请求保留
+
+    # 锁定状态的文章一律不返回明文内容，前端展示密码解锁遮罩
+    if node.is_locked:
+        data['content'] = ''
+        grantee_list = _grantee_list(node)
+        data['grantees'] = grantee_list
+        return jsonify(data), 200
+
     # 加密内容需要用所有者的私钥解密
     if node.encrypted_key:
         try:
@@ -178,19 +203,56 @@ def get_node(node_id):
     else:
         data['content'] = node.content
 
-    data['owner_id'] = node.owner_id
-    data['is_owner'] = (node.owner_id == current_user.id)
+    data['grantees'] = _grantee_list(node)
 
-    # 查出有访问权限的用户列表
+    return jsonify(data), 200
+
+
+# 收集有访问权限的用户列表（被分享者）
+def _grantee_list(node: Node) -> list[dict]:
     grantees = NodePerm.query.filter_by(node_id=node.id, is_active=True).all()
     grantee_list = []
     for g in grantees:
         u = User.query.get(g.grantee_id)
         if u:
             grantee_list.append({'id': u.id, 'nickname': u.nickname or u.email})
-    data['grantees'] = grantee_list
+    return grantee_list
 
-    return jsonify(data), 200
+
+@views_bp.route('/nodes/<int:node_id>/unlock', methods=['POST'])
+@login_required
+# 校验锁定密码，正确则返回明文内容并将会话标记为已解锁
+def unlock_node(node_id):
+    node = Node.query.get_or_404(node_id)
+    if not node.is_locked:
+        return jsonify({'error': '此文章未锁定'}), 400
+    if not _can_access(node, current_user):
+        return jsonify({'error': '无权访问此节点'}), 404
+
+    data = request.get_json(force=True)
+    password = data.get('password', '')
+
+    if not node.lock_password_hash or not check_password_hash(node.lock_password_hash, password):
+        return jsonify({'error': '密码错误'}), 401
+
+    # 校验通过：解密返回内容；本次响应有效，下次 GET 仍会被锁定
+    content = node.content
+    if node.encrypted_key and node.owner_id:
+        owner = User.query.get(node.owner_id)
+        if owner:
+            try:
+                content = decrypt_content(node.content, node.encrypted_key, owner.rsa_private_key)
+            except Exception:
+                logger.exception('Decryption failed for node %d during unlock', node.id)
+                content = node.content
+
+    return jsonify({
+        'content': content,
+        'locked': True,
+        'unlocked': True,
+        'is_owner': node.owner_id == current_user.id,
+        'grantees': _grantee_list(node),
+    }), 200
 
 
 @views_bp.route('/nodes/<int:node_id>', methods=['PUT'])
@@ -217,6 +279,23 @@ def update_node(node_id):
             node.encrypted_key = enc_key
         else:
             node.content = plaintext
+
+    # 锁定设置：仅文章类型，且只有所有者可操作
+    if 'is_locked' in data:
+        if node.type != 'article':
+            return jsonify({'error': '只有文章支持密码锁定'}), 400
+        want_lock = bool(data['is_locked'])
+        lock_pwd = (data.get('lock_password') or '').strip()
+        if want_lock:
+            # 启用或改密码：若提供了新密码则更新；否则沿用旧哈希（已锁定时）
+            if lock_pwd:
+                node.lock_password_hash = generate_password_hash(lock_pwd)
+            elif not node.lock_password_hash:
+                return jsonify({'error': '启用锁定必须设置密码'}), 400
+            node.is_locked = True
+        else:
+            node.is_locked = False
+            node.lock_password_hash = None
 
     db.session.commit()
     result = _node_dict(node)

@@ -92,6 +92,10 @@
         <div class="toolbar-right">
           <span id="save-status" class="save-status" aria-live="polite"></span>
           <span id="readonly-badge" class="readonly-badge" style="display:none">只读</span>
+          <button id="btn-lock" class="btn btn-sm btn-lock" style="display:none" title="密码锁定" aria-label="密码锁定">
+            <svg class="lock-icon lock-open" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <svg class="lock-icon lock-closed" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </button>
         </div>
       </div>
 
@@ -113,6 +117,22 @@
           <div id="html-pane" class="split-pane">
             <div class="pane-label">HTML 预览</div>
             <div id="html-preview" style="flex:1;overflow-y:auto;padding:20px;"></div>
+          </div>
+        </div>
+        <div id="lock-overlay" class="lock-overlay" style="display:none">
+          <div class="lock-card">
+            <div class="lock-card-icon">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            </div>
+            <h3>文章已锁定</h3>
+            <p id="lock-overlay-hint">此文章受密码保护，输入正确密码后即可查看与编辑。</p>
+            <form id="unlock-form" class="lock-form">
+              <div class="form-field">
+                <input type="password" id="unlock-password" placeholder="输入查看密码" autocomplete="off" />
+              </div>
+              <button type="submit" class="btn btn-primary btn-full">解锁查看</button>
+            </form>
+            <p class="lock-error" id="unlock-error"></p>
           </div>
         </div>
       </div>
@@ -265,6 +285,51 @@
         <input type="text" id="rename-input" placeholder="输入新标题" />
       </div>
       <button id="btn-rename-confirm" class="btn btn-primary btn-full" style="margin-top:16px">确认</button>
+    </div>
+  </div>
+
+  <!-- Lock Settings Dialog -->
+  <div id="lock-dialog" class="overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="lock-dialog-title">密码锁定设置</h3>
+        <button class="btn-close" onclick="document.getElementById('lock-dialog').style.display='none'">&times;</button>
+      </div>
+
+      <!-- 未锁定：启用锁定 -->
+      <div id="lock-enable-view" style="display:none">
+        <p class="dialog-hint">启用后，任何人（包括你）都需要输入正确密码才能查看此文章内容。</p>
+        <div class="form-field">
+          <input type="password" id="lock-pwd" placeholder="设置查看密码" autocomplete="new-password" />
+        </div>
+        <div class="form-field" style="margin-top:10px">
+          <input type="password" id="lock-pwd-confirm" placeholder="确认密码" autocomplete="new-password" />
+        </div>
+        <p class="dialog-hint" id="lock-pwd-hint" style="margin-top:8px">密码将用于加密保护此文章。</p>
+        <button id="btn-lock-save" class="btn btn-primary btn-full" style="margin-top:20px">启用密码锁定</button>
+      </div>
+
+      <!-- 已锁定：临时解锁查看中，可真正解除锁定 / 修改密码 -->
+      <div id="lock-enabled-view" style="display:none">
+        <div class="lock-status-banner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>此文章当前已锁定</span>
+        </div>
+        <p class="dialog-hint">你正处于临时解锁查看状态。若想以后打开无需密码，请点击「解除锁定」；否则下次打开仍需输入密码。</p>
+        <button id="btn-lock-unlock" class="btn btn-danger btn-full">解除锁定（以后打开无需密码）</button>
+        <div class="lock-divider"><span>或</span></div>
+        <details class="lock-advanced">
+          <summary>修改查看密码</summary>
+          <div class="form-field" style="margin-top:12px">
+            <input type="password" id="lock-new-pwd" placeholder="设置新密码" autocomplete="new-password" />
+          </div>
+          <div class="form-field" style="margin-top:10px">
+            <input type="password" id="lock-new-pwd-confirm" placeholder="确认新密码" autocomplete="new-password" />
+          </div>
+          <p class="dialog-hint" id="lock-new-pwd-hint" style="margin-top:8px">留空表示保持当前密码不变。</p>
+          <button id="btn-lock-save-new" class="btn btn-primary btn-full" style="margin-top:14px">保存新密码</button>
+        </details>
+      </div>
     </div>
   </div>
 
