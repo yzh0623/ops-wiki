@@ -5,6 +5,8 @@ const Tree = (() => {
   let treeData = [];       // Nested tree for rendering
   let activeId = null;     // Currently active (editor-loaded) node
   let selectedIds = new Set(); // Multi-selected node IDs (for batch ops)
+  let expandedChildIds = {};    // Accordion state: parentId -> the single expanded CHILD id (null = root)
+  let rightClickedNodeId = null; // Set on right-click; suppresses the next expand for that node
   let searchKeyword = '';
   let currentUserId = null;
   let contextNodeId = null; // Node ID that was right-clicked
@@ -92,7 +94,14 @@ const Tree = (() => {
       return;
     }
 
-    TREE_CONTAINER.innerHTML = renderNodes(data, 0);
+    // Accordion mode (search inactive): exactly one child expanded per parent
+    // (the root's chosen child = one first-level open). During search, all
+    // matching results are shown expanded (accordion constraint lifted).
+    if (!searchKeyword && expandedChildIds[null] === undefined && data.length > 0) {
+      expandedChildIds[null] = data[0].id;
+    }
+
+    TREE_CONTAINER.innerHTML = renderNodes(data, 0, null);
     bindTreeEvents();
 
     // Handle pending select after render
@@ -103,10 +112,21 @@ const Tree = (() => {
     }
   }
 
-  function renderNodes(nodes, depth) {
+  function renderNodes(nodes, depth, parentKey) {
     let html = '<ul class="tree-list">';
     for (const node of nodes) {
       const hasChildren = node.children && node.children.length > 0;
+      // Accordion: only the parent's chosen child is expanded (one open per level).
+      // During search, everything renders expanded (accordion constraint lifted).
+      let expanded = true;
+      if (!searchKeyword) {
+        expanded = expandedChildIds[parentKey] === node.id;
+        // Default: when an expanded node has no recorded child selection yet,
+        // open its first child so the branch reveals itself (one-per-level default).
+        if (expanded && hasChildren && expandedChildIds[node.id] === undefined) {
+          expandedChildIds[node.id] = node.children[0].id;
+        }
+      }
       const isActive = activeId === node.id;
       const isMultiSelected = selectedIds.has(node.id) && activeId !== node.id;
       const isOwned = node.owner_id === currentUserId;
@@ -118,12 +138,12 @@ const Tree = (() => {
       if (isActive) cls += ' active';
       if (isMultiSelected) cls += ' multi-selected';
 
-      html += `<li class="${cls}" data-id="${node.id}" data-owner="${node.owner_id || ''}">`;
+      html += `<li class="${cls}" data-id="${node.id}" data-depth="${depth}" data-owner="${node.owner_id || ''}">`;
       html += `<div class="tree-item-content" data-id="${node.id}" data-owner="${node.owner_id || ''}" style="padding-left:${depth * 16 + 8}px">`;
 
       // Expand/collapse toggle
       if (hasChildren) {
-        html += `<span class="tree-toggle expanded">&#9654;</span>`;
+        html += `<span class="tree-toggle ${expanded ? 'expanded' : ''}">&#9654;</span>`;
       } else {
         html += `<span class="tree-toggle empty">&#9654;</span>`;
       }
@@ -144,9 +164,9 @@ const Tree = (() => {
 
       html += `</div>`;
 
-      // Children (rendered expanded by default)
+      // Children follow this node's own expanded state (recursive accordion).
       if (hasChildren) {
-        html += `<ul class="tree-children expanded">${renderNodes(node.children, depth + 1)}</ul>`;
+        html += `<ul class="tree-children ${expanded ? 'expanded' : ''}">${renderNodes(node.children, depth + 1, node.id)}</ul>`;
       }
 
       html += `</li>`;
@@ -346,14 +366,45 @@ const Tree = (() => {
         e.stopPropagation();
         const li = el.closest('.tree-item');
         const ul = li.querySelector(':scope > .tree-children');
-        if (ul) {
-          const isExpanded = ul.classList.contains('expanded');
-          if (isExpanded) {
-            ul.classList.remove('expanded');
-            el.classList.remove('expanded');
+        if (!ul) return;
+        const nodeId = parseInt(li.dataset.id);
+
+        // Right-click guard: a right-click "arms" suppression for the next
+        // expand on this node; never expand in response to a right-click.
+        let suppress = false;
+        if (rightClickedNodeId !== null) {
+          suppress = rightClickedNodeId === nodeId;
+          rightClickedNodeId = null;
+        }
+        if (suppress) return;
+
+        const isExpanded = ul.classList.contains('expanded');
+        if (isExpanded) {
+          ul.classList.remove('expanded');
+          el.classList.remove('expanded');
+        } else {
+          ul.classList.add('expanded');
+          el.classList.add('expanded');
+        }
+
+        // Accordion (search inactive): expanding any node collapses its siblings
+        // under the SAME parent, so only one child stays open at every level.
+        if (!searchKeyword) {
+          const parentLi = li.parentElement.closest('.tree-item');
+          const parentKey = parentLi ? parseInt(parentLi.dataset.id) : null;
+          if (!isExpanded) {
+            // This node is now expanded → collapse its siblings.
+            expandedChildIds[parentKey] = nodeId;
+            li.parentElement.querySelectorAll(':scope > .tree-item').forEach(other => {
+              if (other === li) return;
+              const ou = other.querySelector(':scope > .tree-children');
+              const ot = other.querySelector(':scope > .tree-item-content > .tree-toggle');
+              if (ou) ou.classList.remove('expanded');
+              if (ot) ot.classList.remove('expanded');
+            });
           } else {
-            ul.classList.add('expanded');
-            el.classList.add('expanded');
+            // This node was collapsed → clear its accordion selection.
+            if (expandedChildIds[parentKey] === nodeId) delete expandedChildIds[parentKey];
           }
         }
       });
@@ -402,11 +453,12 @@ const Tree = (() => {
         e.preventDefault();
       });
 
-      // Right-click: context menu
+      // Right-click: context menu (also arms the expand-suppression guard)
       el.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
         const id = parseInt(el.dataset.id);
+        rightClickedNodeId = id;
         showContextMenu(e, id);
       });
     });
@@ -473,7 +525,25 @@ const Tree = (() => {
 
   // ─── Selection ───
 
+  // 返回某节点到根的路径（顶层 → 该节点）的 id 数组
+  function getAncestorIds(id) {
+    const chain = [];
+    let cur = allNodes.find(n => n.id === id);
+    while (cur) {
+      chain.push(cur.id);
+      cur = cur.parent_id != null ? allNodes.find(n => n.id === cur.parent_id) : null;
+    }
+    return chain.reverse();
+  }
+
   async function selectNode(id, event) {
+    // 右键触发的节点不执行展开
+    if (rightClickedNodeId !== null) {
+      const suppress = rightClickedNodeId === id;
+      rightClickedNodeId = null;
+      if (suppress) return;
+    }
+
     if (event && (event.ctrlKey || event.metaKey)) {
       // Ctrl+click: toggle multi-select
       if (selectedIds.has(id)) {
@@ -493,6 +563,16 @@ const Tree = (() => {
     selectedIds.clear();
     selectedIds.add(id);
     activeId = id;
+
+    // Accordion: expand the full ancestor chain so the selected node stays
+    // visible (one open child per level). Inactive while searching.
+    if (!searchKeyword) {
+      const chain = getAncestorIds(id);
+      expandedChildIds[null] = chain[0]; // root's chosen child = the top-level ancestor
+      for (let i = 0; i < chain.length - 1; i++) {
+        expandedChildIds[chain[i]] = chain[i + 1];
+      }
+    }
 
     // Fetch node content for editor
     try {
