@@ -44,6 +44,7 @@ const WikiEditor = (() => {
   const LOCK_NEW_PWD_HINT = document.getElementById('lock-new-pwd-hint');
   const BTN_LOCK_SAVE = document.getElementById('btn-lock-save');
   const BTN_LOCK_UNLOCK = document.getElementById('btn-lock-unlock');
+  const BTN_SCROLL_TOP = document.getElementById('btn-scroll-top');
 
   // 高亮搜索的匹配导航状态
   let hlKeyword = '';
@@ -300,6 +301,34 @@ const WikiEditor = (() => {
     HTML_PREVIEW.addEventListener('scroll', syncScrollFromHtml);
   }
 
+  // ─── Back to top (editing area) ───
+  // 仅在任一窗格滚动超过阈值后显示「回到顶部」按钮（渐进式显隐，减少干扰）
+  function updateScrollTopBtn() {
+    if (!BTN_SCROLL_TOP) return;
+    const scrolled = MARKDOWN_EDITOR.scrollTop > 120 || HTML_PREVIEW.scrollTop > 120;
+    BTN_SCROLL_TOP.classList.toggle('is-visible', scrolled);
+  }
+
+  function scrollEditorToTop() {
+    if (!BTN_SCROLL_TOP) return;
+    // 所有者：Markdown 窗格可见，滚动它即可，滚动同步会带动 HTML 预览；
+    // 非所有者：仅 HTML 预览可滚动，直接滚动预览。
+    const mdVisible = MARKDOWN_PANE.style.display !== 'none';
+    if (mdVisible) {
+      MARKDOWN_EDITOR.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      HTML_PREVIEW.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    updateScrollTopBtn();
+  }
+
+  function initScrollTopBtn() {
+    if (!BTN_SCROLL_TOP) return;
+    MARKDOWN_EDITOR.addEventListener('scroll', updateScrollTopBtn);
+    HTML_PREVIEW.addEventListener('scroll', updateScrollTopBtn);
+    BTN_SCROLL_TOP.addEventListener('click', scrollEditorToTop);
+  }
+
   // ─── Textarea input handler ───
 
   function init() {
@@ -336,6 +365,7 @@ const WikiEditor = (() => {
     initMarkdownToolbar();
     initSelectionTracking();
     initLockUI();
+    initScrollTopBtn();
   }
 
   // 记录光标位置，点击工具栏按钮时 textarea 会失焦，需在 blur 前保存
@@ -614,6 +644,7 @@ const WikiEditor = (() => {
     updateHlNav();
     resetSaveIndicator();
     clearAutoSaveTimer();
+    updateScrollTopBtn();
   }
 
   // 统一启用/禁用 Markdown 工具栏（含插入图片按钮）
@@ -662,6 +693,7 @@ const WikiEditor = (() => {
         LOCK_BTN.style.display = (isOwner && unlockedViewing) ? '' : 'none';
         updateLockButton(true, unlockedViewing);
       }
+      updateScrollTopBtn();
       return;
     }
 
@@ -711,6 +743,8 @@ const WikiEditor = (() => {
       renderShareBar(grantees || []);
       applySplit();
     }
+
+    updateScrollTopBtn();
   }
 
   function renderShareBar(grantees) {
