@@ -1,5 +1,6 @@
 '''
 管理员蓝图：用户审批、停用、用户列表。
+Admin blueprint: approve users, deactivate users, list users.
 '''
 from flask import Blueprint, jsonify
 from flask_login import current_user
@@ -10,7 +11,8 @@ from ..services.decorators import admin_required
 admin_bp = Blueprint('admin', __name__)
 
 
-# 把用户对象转成字典，方便 JSON 序列化
+# 把用户对象转成字典（含注册时间，供管理面板展示）
+# Serialise a user for the admin panel, including the registration time
 def _user_dict(user: User) -> dict:
     return {
         'id': user.id,
@@ -22,7 +24,8 @@ def _user_dict(user: User) -> dict:
     }
 
 
-# 管理员查看所有用户列表
+# 管理员查看所有用户列表（按注册时间倒序）
+# List every user, newest first
 @admin_bp.route('/users', methods=['GET'])
 @admin_required
 def list_users():
@@ -31,6 +34,7 @@ def list_users():
 
 
 # 管理员审批通过用户注册
+# Approve a pending registration
 @admin_bp.route('/users/<int:user_id>/approve', methods=['POST'])
 @admin_required
 def approve_user(user_id):
@@ -41,6 +45,7 @@ def approve_user(user_id):
 
 
 # 管理员停用用户（不能停用自己）
+# Deactivate a user (an admin cannot deactivate themselves)
 @admin_bp.route('/users/<int:user_id>/deactivate', methods=['POST'])
 @admin_required
 def deactivate_user(user_id):

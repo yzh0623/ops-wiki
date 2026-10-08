@@ -1,16 +1,20 @@
 '''
 WSGI 入口，供 gunicorn 或 flask run 使用。
-统一配置日志输出到 LOG_DIR（默认 /Users/yuanzhenhui/Documents/document_file/tmp/ops-wiki）。
+WSGI entry point for gunicorn or flask run.
+
+统一配置日志输出到 LOG_DIR（默认 /home/yzh/Documents/logs/ops-wiki）。
+Logging goes to LOG_DIR, defaulting to the path below.
 '''
 import logging
 import os
 
 from src.ops_wiki.core.app import create_app
 
-# 日志目录：可通过环境变量 LOG_DIR 覆盖，默认落到用户指定路径
+# 日志目录：可通过环境变量 LOG_DIR 覆盖
+# Log directory, overridable with the LOG_DIR environment variable
 LOG_DIR = os.environ.get(
     'LOG_DIR',
-    '/Users/yuanzhenhui/Documents/document_file/tmp/ops-wiki',
+    '/home/yzh/Documents/logs/ops-wiki',
 )
 os.makedirs(LOG_DIR, exist_ok=True)
 

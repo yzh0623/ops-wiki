@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,21 +11,26 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"></noscript>
   <!-- Custom CSS -->
   <link rel="stylesheet" href="/static/css/style.css">
-  <!-- KaTeX (LaTeX 公式渲染) 样式 -->
+  <!-- KaTeX（LaTeX 公式渲染）样式 / KaTeX styles for LaTeX rendering -->
   <link rel="stylesheet" href="/static/vendor/katex.min.css">
 </head>
 <body>
   <!-- Top Navigation Bar -->
   <header id="topbar">
     <div class="topbar-left">
-      <a class="brand" href="#" aria-label="Ops Wiki 首页">
+      <a class="brand" href="#" data-i18n-aria="nav.home" aria-label="Ops Wiki home">
         <span class="brand-ops">Ops</span><span class="brand-wiki">Wiki</span>
       </a>
     </div>
     <div class="topbar-right">
       <span id="user-info" class="user-info"></span>
-      <button id="btn-admin" class="btn btn-sm btn-admin" style="display:none">用户管理</button>
-      <button id="btn-logout" class="btn btn-sm btn-logout" style="display:none">登出</button>
+      <button id="btn-admin" class="btn btn-sm btn-admin" style="display:none" data-i18n="nav.admin">User Management</button>
+      <button id="btn-logout" class="btn btn-sm btn-logout" style="display:none" data-i18n="nav.logout">Log out</button>
+      <div class="lang-switch lang-switch--dark" data-lang-switch role="group" aria-label="Language">
+        <span class="lang-switch-thumb" aria-hidden="true"></span>
+        <button type="button" data-lang="zh" lang="zh-CN">中</button>
+        <button type="button" data-lang="en" lang="en">EN</button>
+      </div>
     </div>
   </header>
 
@@ -34,13 +39,24 @@
     <!-- Left Sidebar -->
     <aside id="sidebar">
       <div id="sidebar-header">
-        <div id="sidebar-search">
+        <div id="sidebar-mode" role="tablist" data-i18n-aria="sidebar.modeLabel" aria-label="Search mode">
+          <button type="button" class="mode-btn active" data-mode="tree" role="tab" aria-selected="true" data-i18n="sidebar.modeTree">Title</button>
+          <button type="button" class="mode-btn" data-mode="semantic" role="tab" aria-selected="false" data-i18n="sidebar.modeSemantic">Semantic</button>
+        </div>
+        <div id="sidebar-search" class="sidebar-search-box">
           <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="search-tree" placeholder="搜索文档..." />
+          <input type="text" id="search-tree" data-i18n-placeholder="sidebar.searchPlaceholder" placeholder="Search documents..." />
+        </div>
+        <div id="sidebar-search-semantic" class="sidebar-search-box" style="display:none">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="search-semantic" data-i18n-placeholder="sidebar.semanticPlaceholder" placeholder="Describe in natural language..." autocomplete="off" />
         </div>
       </div>
       <div id="tree-container">
-        <div class="tree-placeholder">暂无文档</div>
+        <div class="tree-placeholder" data-i18n="sidebar.empty">No documents</div>
+      </div>
+      <div id="search-results" style="display:none">
+        <div class="semantic-hint" data-i18n="sidebar.semanticHint">Type natural language to search by meaning</div>
       </div>
     </aside>
 
@@ -57,42 +73,47 @@
       <!-- Toolbar Row -->
       <div id="toolbar">
         <div class="toolbar-left">
-          <div class="md-toolbar highlight-toolbar" role="search" aria-label="高亮关键字搜索">
+          <div class="md-toolbar highlight-toolbar" role="search" data-i18n-aria="editor.highlightToolbar" aria-label="Highlight keyword search">
             <svg class="highlight-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="highlight-input" placeholder="高亮关键词..." aria-label="高亮关键字" />
-            <button type="button" class="md-btn hl-nav" id="hl-prev" title="上一个匹配 (Shift+Enter)" aria-label="上一个匹配" disabled>
+            <input type="text" id="highlight-input" data-i18n-placeholder="editor.highlightPlaceholder" placeholder="Highlight keyword..." data-i18n-aria="editor.highlightAria" aria-label="Highlight keyword" />
+            <button type="button" class="md-btn hl-nav" id="hl-prev" data-i18n-title="editor.prevMatch" title="Previous match (Shift+Enter)" data-i18n-aria="editor.prevMatchAria" aria-label="Previous match" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
-            <button type="button" class="md-btn hl-nav" id="hl-next" title="下一个匹配 (Enter)" aria-label="下一个匹配" disabled>
+            <button type="button" class="md-btn hl-nav" id="hl-next" data-i18n-title="editor.nextMatch" title="Next match (Enter)" data-i18n-aria="editor.nextMatchAria" aria-label="Next match" disabled>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <span class="hl-count" id="hl-count" aria-live="polite"></span>
           </div>
-          <div class="md-toolbar" id="md-toolbar" role="toolbar" aria-label="Markdown 格式工具栏">
-            <button class="md-btn" data-md="bold" title="加粗 (Ctrl+B)" aria-label="加粗"><strong>B</strong></button>
-            <button class="md-btn" data-md="italic" title="斜体 (Ctrl+I)" aria-label="斜体"><em>I</em></button>
-            <button class="md-btn" data-md="underline" title="下划线" aria-label="下划线"><span style="text-decoration:underline">U</span></button>
-            <button class="md-btn" data-md="strike" title="删除线" aria-label="删除线"><span style="text-decoration:line-through">S</span></button>
-            <button class="md-btn" data-md="code" title="行内代码" aria-label="行内代码">&lt;/&gt;</button>
+          <div class="md-toolbar" id="md-toolbar" role="toolbar" data-i18n-aria="editor.mdToolbar" aria-label="Markdown formatting toolbar">
+            <button class="md-btn" data-md="bold" data-i18n-title="md.bold" title="Bold (Ctrl+B)" data-i18n-aria="md.bold" aria-label="Bold"><strong>B</strong></button>
+            <button class="md-btn" data-md="italic" data-i18n-title="md.italic" title="Italic (Ctrl+I)" data-i18n-aria="md.italic" aria-label="Italic"><em>I</em></button>
+            <button class="md-btn" data-md="underline" data-i18n-title="md.underline" title="Underline" data-i18n-aria="md.underline" aria-label="Underline"><span style="text-decoration:underline">U</span></button>
+            <button class="md-btn" data-md="strike" data-i18n-title="md.strike" title="Strikethrough" data-i18n-aria="md.strike" aria-label="Strikethrough"><span style="text-decoration:line-through">S</span></button>
+            <button class="md-btn" data-md="code" data-i18n-title="md.code" title="Inline code" data-i18n-aria="md.code" aria-label="Inline code">&lt;/&gt;</button>
             <span class="md-sep"></span>
-            <button class="md-btn" data-md="h1" title="一级标题" aria-label="一级标题">H1</button>
-            <button class="md-btn" data-md="h2" title="二级标题" aria-label="二级标题">H2</button>
-            <button class="md-btn" data-md="h3" title="三级标题" aria-label="三级标题">H3</button>
+            <button class="md-btn" data-md="h1" data-i18n-title="md.h1" title="Heading 1" data-i18n-aria="md.h1" aria-label="Heading 1">H1</button>
+            <button class="md-btn" data-md="h2" data-i18n-title="md.h2" title="Heading 2" data-i18n-aria="md.h2" aria-label="Heading 2">H2</button>
+            <button class="md-btn" data-md="h3" data-i18n-title="md.h3" title="Heading 3" data-i18n-aria="md.h3" aria-label="Heading 3">H3</button>
             <span class="md-sep"></span>
-            <button class="md-btn" data-md="quote" title="引用" aria-label="引用">&ldquo;</button>
-            <button class="md-btn" data-md="ul" title="无序列表" aria-label="无序列表">&bull;</button>
-            <button class="md-btn" data-md="ol" title="有序列表" aria-label="有序列表">1.</button>
-            <button class="md-btn" data-md="task" title="任务列表" aria-label="任务列表">&#10003;</button>
-            <button class="md-btn" data-md="codeblock" title="代码块" aria-label="代码块">{ }</button>
-            <button class="md-btn" data-md="link" title="链接" aria-label="链接">🔗</button>
-            <button class="md-btn" data-md="hr" title="分割线" aria-label="分割线">&mdash;</button>
-            <button class="md-btn md-btn-image" id="btn-insert-image" data-md="image" title="插入图片（上传到本地图片库）" aria-label="插入图片" disabled>🖼 图片</button>
+            <button class="md-btn" data-md="quote" data-i18n-title="md.quote" title="Blockquote" data-i18n-aria="md.quote" aria-label="Blockquote">&ldquo;</button>
+            <button class="md-btn" data-md="ul" data-i18n-title="md.ul" title="Bullet list" data-i18n-aria="md.ul" aria-label="Bullet list">&bull;</button>
+            <button class="md-btn" data-md="ol" data-i18n-title="md.ol" title="Numbered list" data-i18n-aria="md.ol" aria-label="Numbered list">1.</button>
+            <button class="md-btn" data-md="task" data-i18n-title="md.task" title="Task list" data-i18n-aria="md.task" aria-label="Task list">&#10003;</button>
+            <button class="md-btn" data-md="codeblock" data-i18n-title="md.codeblock" title="Code block" data-i18n-aria="md.codeblock" aria-label="Code block">{ }</button>
+            <button class="md-btn" data-md="link" data-i18n-title="md.link" title="Link" data-i18n-aria="md.link" aria-label="Link">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </button>
+            <button class="md-btn" data-md="hr" data-i18n-title="md.hr" title="Divider" data-i18n-aria="md.hr" aria-label="Divider">&mdash;</button>
+            <button class="md-btn md-btn-image" id="btn-insert-image" data-md="image" data-i18n-title="md.image" title="Insert image (upload to local library)" data-i18n-aria="md.imageAria" aria-label="Insert image" disabled>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span data-i18n="md.imageBtn">Image</span>
+            </button>
           </div>
         </div>
         <div class="toolbar-right">
           <span id="save-status" class="save-status" aria-live="polite"></span>
-          <span id="readonly-badge" class="readonly-badge" style="display:none">只读</span>
-          <button id="btn-lock" class="btn btn-sm btn-lock" style="display:none" title="密码锁定" aria-label="密码锁定">
+          <span id="readonly-badge" class="readonly-badge" style="display:none" data-i18n="editor.readonly">Read-only</span>
+          <button id="btn-lock" class="btn btn-sm btn-lock" style="display:none" data-i18n-title="editor.lockPassword" title="Password lock" data-i18n-aria="editor.lockPassword" aria-label="Password lock">
             <svg class="lock-icon lock-open" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
             <svg class="lock-icon lock-closed" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </button>
@@ -103,23 +124,23 @@
       <div id="editor-container">
         <div id="editor-placeholder" class="editor-placeholder">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3;margin-bottom:16px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-          <p>选择一个节点进行编辑</p>
-          <p class="editor-placeholder-hint">左键选择 · 右键操作</p>
+          <p data-i18n="editor.selectNode">Select a node to edit</p>
+          <p class="editor-placeholder-hint" data-i18n="editor.selectHint">Left-click to select · right-click for actions</p>
         </div>
         <div id="split-editor" style="display:none; height: 100%;">
           <div id="markdown-pane" class="split-pane">
-            <div class="pane-label">Markdown</div>
+            <div class="pane-label" data-i18n="editor.paneMarkdown">Markdown</div>
             <textarea id="markdown-editor" spellcheck="false"></textarea>
           </div>
           <div id="split-divider" class="split-divider">
             <div class="divider-handle"></div>
           </div>
           <div id="html-pane" class="split-pane">
-            <div class="pane-label">HTML 预览</div>
+            <div class="pane-label" data-i18n="editor.panePreview">HTML preview</div>
             <div id="html-preview" style="flex:1;overflow-y:auto;padding:20px;"></div>
           </div>
         </div>
-        <button id="btn-scroll-top" class="fab fab-scroll-top" type="button" title="回到顶部" aria-label="回到顶部">
+        <button id="btn-scroll-top" class="fab fab-scroll-top" type="button" data-i18n-title="editor.backToTop" title="Back to top" data-i18n-aria="editor.backToTop" aria-label="Back to top">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
         </button>
         <div id="lock-overlay" class="lock-overlay" style="display:none">
@@ -127,13 +148,13 @@
             <div class="lock-card-icon">
               <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
             </div>
-            <h3>文章已锁定</h3>
-            <p id="lock-overlay-hint">此文章受密码保护，输入正确密码后即可查看与编辑。</p>
+            <h3 data-i18n="editor.lockedTitle">Article locked</h3>
+            <p id="lock-overlay-hint" data-i18n="editor.lockedHint">This article is password protected. Enter the correct password to view and edit it.</p>
             <form id="unlock-form" class="lock-form">
               <div class="form-field">
-                <input type="password" id="unlock-password" placeholder="输入查看密码" autocomplete="off" />
+                <input type="password" id="unlock-password" data-i18n-placeholder="editor.unlockPlaceholder" placeholder="Enter password" autocomplete="off" />
               </div>
-              <button type="submit" class="btn btn-primary btn-full">解锁查看</button>
+              <button type="submit" class="btn btn-primary btn-full" data-i18n="editor.unlock">Unlock</button>
             </form>
             <p class="lock-error" id="unlock-error"></p>
           </div>
@@ -145,39 +166,49 @@
   <!-- Auth Overlay -->
   <div id="auth-overlay" class="overlay">
     <div class="modal" id="login-modal">
+      <div class="lang-switch" data-lang-switch role="group" aria-label="Language">
+        <span class="lang-switch-thumb" aria-hidden="true"></span>
+        <button type="button" data-lang="zh" lang="zh-CN">中</button>
+        <button type="button" data-lang="en" lang="en">EN</button>
+      </div>
       <div class="auth-logo">
         <span class="auth-brand">Ops<span class="auth-brand-sub">Wiki</span></span>
       </div>
       <form id="login-form">
         <div class="form-field">
-          <input type="email" id="login-email" placeholder="邮箱" required />
+          <input type="email" id="login-email" data-i18n-placeholder="auth.email" placeholder="Email" required />
         </div>
         <div class="form-field">
-          <input type="password" id="login-password" placeholder="密码" required />
+          <input type="password" id="login-password" data-i18n-placeholder="auth.password" placeholder="Password" required />
         </div>
-        <button type="submit" class="btn btn-primary btn-full">登录</button>
+        <button type="submit" class="btn btn-primary btn-full" data-i18n="auth.login">Log in</button>
         <p class="auth-error" id="login-error"></p>
-        <p class="auth-switch">没有账号？<a href="#" id="show-register">注册账号</a></p>
+        <p class="auth-switch"><span data-i18n="auth.noAccount">No account?</span> <a href="#" id="show-register" data-i18n="auth.signUp">Sign up</a></p>
       </form>
     </div>
     <div class="modal" id="register-modal" style="display:none">
+      <div class="lang-switch" data-lang-switch role="group" aria-label="Language">
+        <span class="lang-switch-thumb" aria-hidden="true"></span>
+        <button type="button" data-lang="zh" lang="zh-CN">中</button>
+        <button type="button" data-lang="en" lang="en">EN</button>
+      </div>
       <div class="auth-logo">
         <span class="auth-brand">Ops<span class="auth-brand-sub">Wiki</span></span>
       </div>
-      <h2>注册账号</h2>
+      <h2 data-i18n="auth.registerTitle">Create account</h2>
       <form id="register-form">
         <div class="form-field">
-          <input type="email" id="reg-email" placeholder="邮箱" required />
+          <input type="email" id="reg-email" data-i18n-placeholder="auth.email" placeholder="Email" required />
         </div>
         <div class="form-field">
-          <input type="password" id="reg-password" placeholder="密码（至少6位）" required />
+          <input type="password" id="reg-password" data-i18n-placeholder="auth.passwordMin" placeholder="Password (min 6 characters)" required />
         </div>
         <div class="form-field">
-          <input type="text" id="reg-nickname" placeholder="昵称（选填）" />
+          <input type="text" id="reg-nickname" data-i18n-placeholder="auth.nickname" placeholder="Nickname (optional)" />
         </div>
-        <button type="submit" class="btn btn-primary btn-full">注册</button>
+        <button type="submit" class="btn btn-primary btn-full" data-i18n="auth.register">Sign up</button>
         <p class="auth-error" id="register-error"></p>
-        <p class="auth-switch">已有账号？<a href="#" id="show-login">返回登录</a></p>
+        <p class="auth-switch"><span data-i18n="auth.haveAccount">Already have an account?</span> <a href="#" id="show-login" data-i18n="auth.backToLogin">Back to log in</a></p>
       </form>
     </div>
   </div>
@@ -186,7 +217,7 @@
   <div id="admin-overlay" class="overlay" style="display:none">
     <div class="modal modal-wide" id="admin-modal">
       <div class="modal-header">
-        <h2>用户管理</h2>
+        <h2 data-i18n="admin.title">User Management</h2>
         <button id="btn-close-admin" class="btn-close">&times;</button>
       </div>
       <div id="admin-user-list" class="admin-user-list-scroll"></div>
@@ -200,41 +231,41 @@
   <div id="context-menu" class="context-menu" style="display:none">
     <div class="context-menu-item" data-action="add-child">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-      新增子节点
+      <span data-i18n="tree.addChild">New child node</span>
     </div>
     <div class="context-menu-item" data-action="import">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      导入 Markdown
+      <span data-i18n="tree.importMd">Import Markdown</span>
     </div>
     <div class="context-menu-item" data-action="import-word">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      导入 Word
+      <span data-i18n="tree.importWord">Import Word</span>
     </div>
     <div class="context-menu-item" data-action="import-excel">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-      导入 Excel
+      <span data-i18n="tree.importExcel">Import Excel</span>
     </div>
     <div class="context-menu-item" data-action="rename">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      重命名
+      <span data-i18n="tree.rename">Rename</span>
     </div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item context-menu-item--danger" data-action="delete">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-      删除节点
+      <span data-i18n="tree.delete">Delete node</span>
     </div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" data-action="batch-authorize">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-      批量授权
+      <span data-i18n="tree.batchAuthorize">Bulk grant</span>
     </div>
     <div class="context-menu-item" data-action="batch-revoke">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-      批量撤销
+      <span data-i18n="tree.batchRevoke">Bulk revoke</span>
     </div>
     <div class="context-menu-item" data-action="transfer">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-      权限转让
+      <span data-i18n="tree.transfer">Transfer ownership</span>
     </div>
   </div>
 
@@ -242,7 +273,7 @@
   <div id="empty-context-menu" class="context-menu" style="display:none">
     <div class="context-menu-item" data-action="add-root">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-      新增根文档
+      <span data-i18n="tree.addRoot">New root document</span>
     </div>
   </div>
 
@@ -250,14 +281,14 @@
   <div id="batch-dialog" class="overlay" style="display:none">
     <div class="modal modal-wide">
       <div class="modal-header">
-        <h3 class="batch-dialog-title">批量授权</h3>
+        <h3 class="batch-dialog-title" data-i18n="admin.grant">Bulk grant</h3>
         <button class="btn-close" onclick="document.getElementById('batch-dialog').style.display='none'">&times;</button>
       </div>
       <div id="batch-user-list" class="user-checklist"></div>
       <label class="recursive-label" id="batch-recursive-label">
-        <input type="checkbox" id="batch-recursive" /> 包含所有子节点
+        <input type="checkbox" id="batch-recursive" /> <span data-i18n="admin.includeChildren">Include all child nodes</span>
       </label>
-      <button id="btn-batch-save" class="btn btn-primary btn-full" style="margin-top:16px">确认</button>
+      <button id="btn-batch-save" class="btn btn-primary btn-full" style="margin-top:16px" data-i18n="common.confirm">Confirm</button>
     </div>
   </div>
 
@@ -265,15 +296,15 @@
   <div id="transfer-dialog" class="overlay" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h3>权限转让</h3>
+        <h3 data-i18n="admin.transferTitle">Transfer ownership</h3>
         <button class="btn-close" onclick="document.getElementById('transfer-dialog').style.display='none'">&times;</button>
       </div>
-      <p class="dialog-hint">转让后该文章所有权将转移给目标用户</p>
+      <p class="dialog-hint" data-i18n="admin.transferHint">Ownership of this article will be transferred to the target user.</p>
       <select id="transfer-user-select" class="dialog-select"></select>
       <label class="recursive-label" id="transfer-recursive-label">
-        <input type="checkbox" id="transfer-recursive" /> 包含所有子节点
+        <input type="checkbox" id="transfer-recursive" /> <span data-i18n="admin.includeChildren">Include all child nodes</span>
       </label>
-      <button id="btn-transfer-confirm" class="btn btn-primary btn-full" style="margin-top:20px">确认转让</button>
+      <button id="btn-transfer-confirm" class="btn btn-primary btn-full" style="margin-top:20px" data-i18n="admin.confirmTransferBtn">Confirm transfer</button>
     </div>
   </div>
 
@@ -281,13 +312,13 @@
   <div id="rename-dialog" class="overlay" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h3>重命名节点</h3>
+        <h3 data-i18n="tree.renameDialogTitle">Rename node</h3>
         <button class="btn-close" onclick="document.getElementById('rename-dialog').style.display='none'">&times;</button>
       </div>
       <div class="form-field">
-        <input type="text" id="rename-input" placeholder="输入新标题" />
+        <input type="text" id="rename-input" data-i18n-placeholder="tree.renamePlaceholder" placeholder="Enter new title" />
       </div>
-      <button id="btn-rename-confirm" class="btn btn-primary btn-full" style="margin-top:16px">确认</button>
+      <button id="btn-rename-confirm" class="btn btn-primary btn-full" style="margin-top:16px" data-i18n="common.confirm">Confirm</button>
     </div>
   </div>
 
@@ -295,42 +326,43 @@
   <div id="lock-dialog" class="overlay" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h3 id="lock-dialog-title">密码锁定设置</h3>
+        <h3 id="lock-dialog-title" data-i18n="editor.lockSetTitle">Set password lock</h3>
         <button class="btn-close" onclick="document.getElementById('lock-dialog').style.display='none'">&times;</button>
       </div>
 
-      <!-- 未锁定：启用锁定 -->
+      <!-- 未锁定：启用锁定 / Not locked: enable the lock -->
       <div id="lock-enable-view" style="display:none">
-        <p class="dialog-hint">启用后，任何人（包括你）都需要输入正确密码才能查看此文章内容。</p>
+        <p class="dialog-hint" data-i18n="editor.lockEnableHint">Once enabled, everyone (including you) must enter the correct password to view this article.</p>
         <div class="form-field">
-          <input type="password" id="lock-pwd" placeholder="设置查看密码" autocomplete="new-password" />
+          <input type="password" id="lock-pwd" data-i18n-placeholder="editor.setViewPassword" placeholder="Set password" autocomplete="new-password" />
         </div>
         <div class="form-field" style="margin-top:10px">
-          <input type="password" id="lock-pwd-confirm" placeholder="确认密码" autocomplete="new-password" />
+          <input type="password" id="lock-pwd-confirm" data-i18n-placeholder="editor.confirmPassword" placeholder="Confirm password" autocomplete="new-password" />
         </div>
-        <p class="dialog-hint" id="lock-pwd-hint" style="margin-top:8px">密码将用于加密保护此文章。</p>
-        <button id="btn-lock-save" class="btn btn-primary btn-full" style="margin-top:20px">启用密码锁定</button>
+        <p class="dialog-hint" id="lock-pwd-hint" style="margin-top:8px" data-i18n="editor.pwdEncryptHint">The password encrypts and protects this article.</p>
+        <button id="btn-lock-save" class="btn btn-primary btn-full" style="margin-top:20px" data-i18n="editor.enableLock">Enable password lock</button>
       </div>
 
-      <!-- 已锁定：临时解锁查看中，可真正解除锁定 / 修改密码 -->
+      <!-- 已锁定：临时解锁查看中，可真正解除锁定或改密码
+           Locked and temporarily unlocked: remove the lock or change the password -->
       <div id="lock-enabled-view" style="display:none">
         <div class="lock-status-banner">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span>此文章当前已锁定</span>
+          <span data-i18n="editor.lockedNow">This article is currently locked</span>
         </div>
-        <p class="dialog-hint">你正处于临时解锁查看状态。若想以后打开无需密码，请点击「解除锁定」；否则下次打开仍需输入密码。</p>
-        <button id="btn-lock-unlock" class="btn btn-danger btn-full">解除锁定（以后打开无需密码）</button>
-        <div class="lock-divider"><span>或</span></div>
+        <p class="dialog-hint" data-i18n="editor.tempUnlockHint">You are temporarily unlocked. Click “Remove lock” to open it without a password later; otherwise the password is required again next time.</p>
+        <button id="btn-lock-unlock" class="btn btn-danger btn-full" data-i18n="editor.removeLock">Remove lock (open without password later)</button>
+        <div class="lock-divider"><span data-i18n="common.or">or</span></div>
         <details class="lock-advanced">
-          <summary>修改查看密码</summary>
+          <summary data-i18n="editor.changePassword">Change password</summary>
           <div class="form-field" style="margin-top:12px">
-            <input type="password" id="lock-new-pwd" placeholder="设置新密码" autocomplete="new-password" />
+            <input type="password" id="lock-new-pwd" data-i18n-placeholder="editor.newPassword" placeholder="New password" autocomplete="new-password" />
           </div>
           <div class="form-field" style="margin-top:10px">
-            <input type="password" id="lock-new-pwd-confirm" placeholder="确认新密码" autocomplete="new-password" />
+            <input type="password" id="lock-new-pwd-confirm" data-i18n-placeholder="editor.confirmNewPassword" placeholder="Confirm new password" autocomplete="new-password" />
           </div>
-          <p class="dialog-hint" id="lock-new-pwd-hint" style="margin-top:8px">留空表示保持当前密码不变。</p>
-          <button id="btn-lock-save-new" class="btn btn-primary btn-full" style="margin-top:14px">保存新密码</button>
+          <p class="dialog-hint" id="lock-new-pwd-hint" style="margin-top:8px" data-i18n="editor.leaveBlankHint">Leave blank to keep the current password.</p>
+          <button id="btn-lock-save-new" class="btn btn-primary btn-full" style="margin-top:14px" data-i18n="editor.saveNewPassword">Save new password</button>
         </details>
       </div>
     </div>
@@ -338,14 +370,15 @@
 
   <!-- Scripts -->
   <script src="/static/js/marked.min.js"></script>
-  <!-- Mermaid 流程图 / 时序图等图表渲染 -->
+  <!-- Mermaid 流程图 / 时序图等图表渲染 / Mermaid rendering for diagrams -->
   <script src="/static/vendor/mermaid.min.js"></script>
-  <!-- KaTeX LaTeX 公式渲染 -->
+  <!-- KaTeX LaTeX 公式渲染 / KaTeX rendering for LaTeX math -->
   <script src="/static/vendor/katex.min.js"></script>
-  <script src="/static/js/api.js"></script>
+  <script src="/static/js/i18n.js"></script>
   <script src="/static/js/auth.js"></script>
   <script src="/static/js/editor.js"></script>
   <script src="/static/js/tree.js"></script>
+  <script src="/static/js/semantic.js"></script>
   <script src="/static/js/app.js"></script>
 
 </body>

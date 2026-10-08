@@ -18,10 +18,10 @@ const Tree = (() => {
   let dragTimer = null;
   let dragStartX = 0;
   let dragStartY = 0;
-  let dragCurrentX = 0;      // 实时追踪鼠标位置（长按等待期间也会更新）
+  let dragCurrentX = 0;      // 实时追踪鼠标位置（长按等待期间也会更新） / track the pointer live, including during the long-press wait
   let dragCurrentY = 0;
 
-  const LONG_PRESS_MS = 200;  // 长按触发延迟（ms）
+  const LONG_PRESS_MS = 200;  // 长按触发延迟（ms） / long-press threshold in ms
 
   const TREE_CONTAINER = document.getElementById('tree-container');
   const SEARCH_INPUT = document.getElementById('search-tree');
@@ -84,13 +84,13 @@ const Tree = (() => {
 
   function renderTree() {
     if (!treeData || treeData.length === 0) {
-      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">暂无文档<br><span style="opacity:0.6">右键点击此处新增</span></div>';
+      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder"><span data-i18n="sidebar.empty">No documents</span><br><span style="opacity:0.6" data-i18n="editor.rightClickAdd">Right-click here to add</span></div>';
       return;
     }
 
     const data = searchKeyword ? filterTree(treeData, searchKeyword) : treeData;
     if (searchKeyword && data.length === 0) {
-      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">未找到匹配文档</div>';
+      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">' + I18n.t('sidebar.noMatch') + '</div>';
       return;
     }
 
@@ -153,7 +153,7 @@ const Tree = (() => {
 
       // Lock icon (password-locked article)
       if (node.is_locked) {
-        html += `<span class="tree-icon tree-lock-icon" title="已锁定"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>`;
+        html += `<span class="tree-icon tree-lock-icon" title="${I18n.t('tree.locked')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>`;
       }
 
       // Title
@@ -189,6 +189,7 @@ const Tree = (() => {
   // ─── Drag-and-Drop Helpers ───
 
   // 获取指定节点的所有后代 ID
+  // Collect every descendant id of a node
   function getSubtreeIds(nodeId) {
     const ids = [];
     const children = allNodes.filter(n => n.parent_id === nodeId);
@@ -200,17 +201,20 @@ const Tree = (() => {
   }
 
   // 检查 checkId 是否是 parentId 的后代
+  // Check whether checkId is a descendant of parentId
   function isDescendantOf(parentId, checkId) {
     const subtree = getSubtreeIds(parentId);
     return subtree.includes(checkId);
   }
 
   // 启动拖拽
+  // Start dragging
   function startDrag(nodeId, sourceEl, mouseX, mouseY) {
     const node = allNodes.find(n => n.id === nodeId);
     if (!node || node.owner_id !== currentUserId) return;
 
     // 创建 ghost 元素
+    // Create the drag ghost element
     const rect = sourceEl.getBoundingClientRect();
     const ghost = document.createElement('div');
     ghost.className = 'tree-drag-ghost';
@@ -221,10 +225,12 @@ const Tree = (() => {
     document.body.appendChild(ghost);
 
     // 标记原始元素为拖拽中
+    // Mark the source element as being dragged
     const li = sourceEl.closest('.tree-item');
     if (li) li.classList.add('dragging');
 
     // 创建全屏拖拽遮罩
+    // Create the full-screen drag overlay
     const overlay = document.createElement('div');
     overlay.id = 'tree-drag-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9998;cursor:grabbing;';
@@ -244,19 +250,23 @@ const Tree = (() => {
   }
 
   // 更新拖拽位置和目标
+  // Update the drag position and the drop target
   function updateDrag(e) {
     if (!dragState) return;
 
     const { ghostEl, offsetX, offsetY, nodeId } = dragState;
 
     // 更新 ghost 位置
+    // Move the ghost
     ghostEl.style.left = (e.clientX - offsetX) + 'px';
     ghostEl.style.top = (e.clientY - offsetY) + 'px';
 
     // 查找最近的合法放置目标
+    // Find the nearest valid drop target
     const target = findDropTarget(e.clientX, e.clientY, nodeId);
 
     // 清除之前的放置目标高亮
+    // Clear the previous drop-target highlight
     clearDropTargets();
 
     if (target) {
@@ -264,6 +274,7 @@ const Tree = (() => {
       if (targetEl) {
         targetEl.classList.add('drop-target');
         // 展开目标节点（如果有子节点且已折叠）
+        // Expand the target when it has collapsed children
         const parentLi = targetEl.closest('.tree-item');
         const childUl = parentLi ? parentLi.querySelector(':scope > .tree-children') : null;
         if (childUl && !childUl.classList.contains('expanded')) {
@@ -279,6 +290,7 @@ const Tree = (() => {
   }
 
   // 查找鼠标位置最近的合法放置目标
+  // Find the valid drop target closest to the pointer
   function findDropTarget(mouseX, mouseY, draggedId) {
     const items = TREE_CONTAINER.querySelectorAll('.tree-item-content');
     let closest = null;
@@ -288,6 +300,7 @@ const Tree = (() => {
       const id = parseInt(item.dataset.id);
       if (id === draggedId) continue;
       // 不允许拖入自己的子树
+      // dropping into your own subtree is not allowed
       if (isDescendantOf(draggedId, id)) continue;
 
       const rect = item.getBoundingClientRect();
@@ -304,6 +317,7 @@ const Tree = (() => {
   }
 
   // 清除放置目标高亮
+  // Clear the drop-target highlight
   function clearDropTargets() {
     TREE_CONTAINER.querySelectorAll('.drop-target').forEach(el => {
       el.classList.remove('drop-target');
@@ -311,22 +325,27 @@ const Tree = (() => {
   }
 
   // 结束拖拽
+  // Finish dragging
   function endDrag() {
     if (!dragState) return;
 
     const { nodeId, ghostEl, dropTargetId, sourceEl } = dragState;
 
     // 清理 ghost
+    // Clean up the ghost
     if (ghostEl && ghostEl.parentNode) ghostEl.remove();
 
     // 清理原始元素样式
+    // Restore the source element's styles
     const li = sourceEl.closest('.tree-item');
     if (li) li.classList.remove('dragging');
 
     // 清理放置目标高亮
+    // Clear the drop-target highlight
     clearDropTargets();
 
     // 清理拖拽遮罩
+    // Remove the drag overlay
     const overlay = document.getElementById('tree-drag-overlay');
     if (overlay) overlay.remove();
 
@@ -334,6 +353,7 @@ const Tree = (() => {
     document.body.style.userSelect = '';
 
     // 如果有合法的放置目标，执行移动
+    // Perform the move when a valid drop target exists
     if (dropTargetId !== null) {
       moveNodeToParent(nodeId, dropTargetId);
     }
@@ -342,6 +362,7 @@ const Tree = (() => {
   }
 
   // 调用后端 API 移动节点
+  // Ask the backend to move the node
   async function moveNodeToParent(nodeId, newParentId) {
     try {
       const res = await fetch(`/api/nodes/${nodeId}/move`, {
@@ -351,14 +372,14 @@ const Tree = (() => {
       });
       if (!res.ok) {
         const data = await res.json();
-        showToast(data.error || '移动失败', 'error');
+        showToast(data.error || I18n.t('tree.moveFailed'), 'error');
         return;
       }
       pendingSelectId = nodeId;
       await loadTree();
-      showToast('节点已移动', 'success');
+      showToast(I18n.t('tree.moved'), 'success');
     } catch (e) {
-      showToast('移动节点失败', 'error');
+      showToast(I18n.t('tree.moveNodeFailed'), 'error');
     }
   }
 
@@ -431,8 +452,8 @@ const Tree = (() => {
 
       // Mousedown: start long-press timer for drag
       el.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;          // 仅左键
-        if (e.ctrlKey || e.metaKey) return;  // 不干扰多选
+        if (e.button !== 0) return;          // 仅左键 / left button only
+        if (e.ctrlKey || e.metaKey) return;  // 不干扰多选 / leave multi-select alone
 
         dragStartX = e.clientX;
         dragStartY = e.clientY;
@@ -443,17 +464,20 @@ const Tree = (() => {
           const id = parseInt(el.dataset.id);
           const node = allNodes.find(n => n.id === id);
           // 只有自己的节点才能拖拽
+          // Only your own nodes can be dragged
           if (!node || node.owner_id !== currentUserId) {
             dragTimer = null;
             return;
           }
           // 使用实时追踪的鼠标位置，而非 mousedown 时的位置
+          // use the live pointer position, not the one from mousedown
           startDrag(id, el, dragCurrentX, dragCurrentY);
           dragTimer = null;
         }, LONG_PRESS_MS);
       });
 
       // 阻止浏览器原生拖拽（防止干扰自定义拖拽）
+      // Block native HTML5 drag so it cannot interfere
       el.addEventListener('dragstart', (e) => {
         e.preventDefault();
       });
@@ -472,12 +496,14 @@ const Tree = (() => {
   // Document-level drag handlers
   document.addEventListener('mousemove', (e) => {
     // 实时追踪鼠标位置（长按等待期间也更新，供 setTimeout 回调使用）
+    // Track the pointer live so the setTimeout callback sees the latest position
     if (dragTimer && !dragState) {
       dragCurrentX = e.clientX;
       dragCurrentY = e.clientY;
       return;
     }
     // 拖拽进行中，更新位置
+    // Dragging in progress: keep the ghost and target updated
     if (dragState) {
       e.preventDefault();
       updateDrag(e);
@@ -531,6 +557,7 @@ const Tree = (() => {
   // ─── Selection ───
 
   // 返回某节点到根的路径（顶层 → 该节点）的 id 数组
+  // Return the node's path to the root (top level -> node) as an id array
   function getAncestorIds(id) {
     const chain = [];
     let cur = allNodes.find(n => n.id === id);
@@ -543,6 +570,7 @@ const Tree = (() => {
 
   async function selectNode(id, event) {
     // 右键触发的节点不执行展开
+    // A right-click should not toggle expansion
     if (rightClickedNodeId !== null) {
       const suppress = rightClickedNodeId === id;
       rightClickedNodeId = null;
@@ -584,13 +612,13 @@ const Tree = (() => {
       const res = await fetch(`/api/nodes/${id}`);
       const node = await res.json();
       if (node.content === null && node.owner_id && node.owner_id !== currentUserId) {
-        showToast('你没有权限查看此文章的内容', 'error');
+        showToast(I18n.t('tree.noPermissionView'), 'error');
       }
       if (typeof WikiEditor !== 'undefined') {
         WikiEditor.loadContent(id, node.content || '', node.grantees || [], node.is_owner, node.locked, node.unlocked);
       }
     } catch (e) {
-      showToast('加载节点内容失败', 'error');
+      showToast(I18n.t('tree.loadContentFailed'), 'error');
     }
     renderTree();
   }
@@ -670,8 +698,8 @@ const Tree = (() => {
   // ─── CRUD Operations ───
 
   async function addNode(parentId, type) {
-    const label = type === 'document' ? '文档' : '文章';
-    const title = prompt(`请输入新${label}标题：`);
+    const label = type === 'document' ? I18n.t('tree.docLabel') : I18n.t('tree.articleLabel');
+    const title = prompt(I18n.t('tree.promptNewTitle', { label }));
     if (!title || !title.trim()) return;
 
     try {
@@ -682,26 +710,26 @@ const Tree = (() => {
       });
       if (!res.ok) {
         const data = await res.json();
-        showToast(data.error || '创建失败', 'error');
+        showToast(data.error || I18n.t('tree.createFailed'), 'error');
         return;
       }
       const newNode = await res.json();
       pendingSelectId = newNode.id;
       await loadTree();
-      showToast(`${label}创建成功`, 'success');
+      showToast(I18n.t('tree.createSuccess', { label }), 'success');
     } catch (e) {
-      showToast('创建节点失败', 'error');
+      showToast(I18n.t('tree.createNodeFailed'), 'error');
     }
   }
 
   async function deleteNode(id) {
-    if (!confirm('确定删除此节点？其子节点将自动上移到上级节点。')) return;
+    if (!confirm(I18n.t('tree.confirmDelete'))) return;
 
     try {
       const res = await fetch(`/api/nodes/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
-        showToast(data.error || '删除失败', 'error');
+        showToast(data.error || I18n.t('tree.deleteFailed'), 'error');
         return;
       }
       if (activeId === id) {
@@ -710,15 +738,16 @@ const Tree = (() => {
       }
       selectedIds.delete(id);
       await loadTree();
-      showToast('节点已删除', 'success');
+      showToast(I18n.t('tree.deleted'), 'success');
     } catch (e) {
-      showToast('删除节点失败', 'error');
+      showToast(I18n.t('tree.deleteNodeFailed'), 'error');
     }
   }
 
   // ─── Batch Import Helpers ───
 
   // 批量上传多个文件，返回 { success, failed } 计数
+  // Upload files one by one, returning { success, failed } counts
   async function batchUploadFiles(files, apiUrl) {
     let success = 0;
     let failed = 0;
@@ -748,13 +777,14 @@ const Tree = (() => {
   }
 
   // 显示批量导入结果
+  // Report the batch import result
   function showBatchResult(result, typeLabel) {
     if (result.success > 0 && result.failed === 0) {
-      showToast(`成功导入 ${result.success} 个${typeLabel}文件`, 'success');
+      showToast(I18n.t('tree.importSuccess', { count: result.success, label: typeLabel }), 'success');
     } else if (result.success > 0 && result.failed > 0) {
-      showToast(`导入完成：${result.success} 成功，${result.failed} 失败`, 'error');
+      showToast(I18n.t('tree.importPartial', { success: result.success, failed: result.failed }), 'error');
     } else {
-      showToast(`${typeLabel}文件导入失败`, 'error');
+      showToast(I18n.t('tree.importFailed', { label: typeLabel }), 'error');
     }
   }
 
@@ -830,13 +860,13 @@ const Tree = (() => {
       });
       if (!res.ok) {
         const data = await res.json();
-        showToast(data.error || '重命名失败', 'error');
+        showToast(data.error || I18n.t('tree.renameFailed'), 'error');
         return;
       }
       await loadTree();
-      showToast('重命名成功', 'success');
+      showToast(I18n.t('tree.renameSuccess'), 'success');
     } catch (e) {
-      showToast('重命名失败', 'error');
+      showToast(I18n.t('tree.renameFailed'), 'error');
     }
   }
 
@@ -940,7 +970,7 @@ const Tree = (() => {
 
       renderTree();
     } catch (e) {
-      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">加载失败，请刷新页面</div>';
+      TREE_CONTAINER.innerHTML = '<div class="tree-placeholder">' + I18n.t('sidebar.loadFailed') + '</div>';
     }
   }
 
@@ -955,18 +985,27 @@ const Tree = (() => {
     }, 300);
   });
 
+  // 清空关键词搜索（供语义搜索跳转/模式切换时恢复完整树）
+  // Clear the keyword search so the full tree returns when leaving semantic mode
+  function clearSearch() {
+    clearTimeout(searchTimer);
+    searchKeyword = '';
+    if (SEARCH_INPUT.value) SEARCH_INPUT.value = '';
+    renderTree();
+  }
+
+  // 语言切换后重渲染：空态、无匹配、锁定提示等文案随之更新
+  // Re-render on language change: empty state, no-match and lock hints follow
+  I18n.onChange(() => renderTree());
+
   return {
     loadTree,
     selectNode,
+    clearSearch,
     getSelectedIds: () => [...selectedIds],
     getActiveId: () => activeId,
-    getAllNodes: () => [...allNodes],
-    getCurrentUserId: () => currentUserId,
     countDescendants,
-    addNode,
-    deleteNode,
     renameNode,
-    moveNodeToParent,
     setCurrentUserId,
     resetCurrentUserId,
   };

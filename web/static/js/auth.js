@@ -37,10 +37,10 @@ const Auth = (() => {
           if (typeof Tree !== 'undefined' && Tree.setCurrentUserId) Tree.setCurrentUserId(data.id);
           if (typeof Tree !== 'undefined' && Tree.loadTree) Tree.loadTree();
         } else {
-          errorEl.textContent = data.error || '登录失败';
+          errorEl.textContent = data.error || I18n.t('auth.loginFailed');
         }
       } catch (err) {
-        errorEl.textContent = '网络错误，请重试';
+        errorEl.textContent = I18n.t('auth.networkRetry');
       }
     });
 
@@ -61,16 +61,16 @@ const Auth = (() => {
         const data = await res.json();
         if (res.ok) {
           errorEl.style.color = '#10b981';
-          errorEl.textContent = '注册成功！等待管理员审批后即可登录。';
+          errorEl.textContent = I18n.t('auth.registerSuccess');
           document.getElementById('reg-email').value = '';
           document.getElementById('reg-password').value = '';
           document.getElementById('reg-nickname').value = '';
         } else {
           errorEl.style.color = '#ef4444';
-          errorEl.textContent = data.error || '注册失败';
+          errorEl.textContent = data.error || I18n.t('auth.registerFailed');
         }
       } catch (err) {
-        errorEl.textContent = '网络错误，请重试';
+        errorEl.textContent = I18n.t('auth.networkRetry');
       }
     });
 
@@ -90,7 +90,8 @@ const Auth = (() => {
       document.getElementById('login-password').value = '';
       updateUI();
       // Clear UI state on logout
-      document.getElementById('tree-container').innerHTML = '<div class="tree-placeholder">暂无文档</div>';
+      document.getElementById('tree-container').innerHTML = '<div class="tree-placeholder" data-i18n="sidebar.empty"></div>';
+      I18n.apply(document.getElementById('tree-container'));
       if (typeof WikiEditor !== 'undefined' && WikiEditor.showPlaceholder) {
         WikiEditor.showPlaceholder();
       }
@@ -134,6 +135,13 @@ const Auth = (() => {
   }
 
   function getUser() { return currentUser; }
+
+  // 语言切换后清掉残留报错：后端消息按请求语言生成，切换后必然与新语言不一致
+  // Clear stale errors on language change: server messages are language-specific
+  I18n.onChange(() => {
+    document.getElementById('login-error').textContent = '';
+    document.getElementById('register-error').textContent = '';
+  });
 
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-admin').addEventListener('click', () => {

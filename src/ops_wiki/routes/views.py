@@ -1,5 +1,10 @@
 '''
-主要 API 视图：文档节点 CRUD、树、搜索、文件导入、分享、转让、批量授权。
+主要 API 视图：文档节点 CRUD、树、搜索（标题 / 语义）、文件导入、分享、转让、批量授权。
+Main API views: node CRUD, tree, search (title/semantic), file import, share,
+transfer and batch authorization.
+
+写文案约定 / Convention: handlers keep writing Chinese messages; the shared
+i18n layer translates them to English on the way out (see services/i18n.py).
 '''
 from __future__ import annotations
 
@@ -14,6 +19,8 @@ from ..core.extensions import db
 from ..models import Node, User, NodePermission as NodePerm
 from ..services.crypto import encrypt_content, decrypt_content
 from ..services.email_utils import send_notification
+from ..services import vector_store as vs
+from ..services.embedding import embed_query, embedding_available
 
 import random
 import string
@@ -25,6 +32,7 @@ views_bp = Blueprint('views', __name__)
 
 
 # 图片统一存储目录（来自配置，指向个人数据资产的 imgs 目录）
+# Image directory from the config, pointing at the personal asset folder
 def get_images_dir() -> str:
     images_dir = current_app.config.get('IMAGES_DIR')
     if not images_dir:
@@ -34,6 +42,7 @@ def get_images_dir() -> str:
 
 
 # 生成统一命名的图片文件名：img_<毫秒时间戳>_<4位随机>.ext
+# Build a uniform image filename: img_<ms timestamp>_<4 random chars>.ext
 def _gen_image_filename(ext: str) -> str:
     rand = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
     ts = int(time.time() * 1000)
@@ -44,6 +53,7 @@ def _gen_image_filename(ext: str) -> str:
 
 
 # 把图片字节保存到统一图片目录并返回 (存储文件名, 访问URL)
+# Save image bytes into the shared image directory, returning (filename, url)
 def _save_image_bytes(img_bytes: bytes, ext: str) -> tuple[str, str]:
     images_dir = get_images_dir()
     fname = _gen_image_filename(ext)
@@ -54,6 +64,7 @@ def _save_image_bytes(img_bytes: bytes, ext: str) -> tuple[str, str]:
 
 @views_bp.record_once
 # 注册 SPA 根路由
+# Register the SPA root route
 def _register_root_route(state):
     @state.app.route('/')
     def spa_index():
@@ -61,6 +72,7 @@ def _register_root_route(state):
 
 
 # 把 Node 对象转成字典格式
+# Serialise a Node into a plain dictionary
 def _node_dict(node: Node) -> dict:
     return {
         'id': node.id,
@@ -75,7 +87,39 @@ def _node_dict(node: Node) -> dict:
     }
 
 
+# 生成检索结果摘要：去掉分块时加的标题前缀，压缩空白并截断
+# Build a result snippet: drop the title prefix, collapse whitespace, truncate
+def _make_snippet(text: str, limit: int = 160) -> str:
+    body = text or ''
+    if body.startswith('#'):
+        body = body.split('\n', 1)[1] if '\n' in body else ''
+    body = ' '.join(body.split())
+    return body[:limit] + ('…' if len(body) > limit else '')
+
+
+# 保存后触发异步向量重建（后台线程，不阻塞当前请求；失败不影响保存结果）
+# Queue an async vector rebuild after saving (non-blocking, never fails the request)
+def _schedule_embedding(node_id: int) -> None:
+    try:
+        from ..services.index_queue import submit
+        submit(node_id, current_user.id)
+    except Exception:
+        logger.warning('提交向量重建任务失败 node=%s', node_id, exc_info=True)
+
+
+# 删除节点时同步移除其向量索引（只删数据库行，不需要加载模型）
+# Drop a node's vector index (row deletes only, no model needed)
+def _drop_embedding(node_ids) -> None:
+    try:
+        from ..services.indexer import remove_node_index
+        for nid in node_ids:
+            remove_node_index(nid)
+    except Exception:
+        logger.warning('移除向量索引失败 %s', list(node_ids), exc_info=True)
+
+
 # 递归构建树形结构
+# Recursively build the nested tree structure
 def _build_tree(nodes: list[Node], parent_id: int | None = None) -> list[dict]:
     result = []
     for node in nodes:
@@ -88,6 +132,7 @@ def _build_tree(nodes: list[Node], parent_id: int | None = None) -> list[dict]:
 
 
 # 递归收集所有后代节点 ID
+# Recursively collect every descendant node id
 def _get_subtree_ids(parent_id: int) -> list[int]:
     ids: list[int] = []
     children = Node.query.filter_by(parent_id=parent_id).all()
@@ -100,6 +145,7 @@ def _get_subtree_ids(parent_id: int) -> list[int]:
 @views_bp.route('/nodes', methods=['POST'])
 @login_required
 # 创建新节点（文档或文章）
+# Create a node (document folder or article)
 def create_node():
     data = request.get_json(force=True)
     title = (data.get('title') or '').strip()
@@ -127,6 +173,7 @@ def create_node():
     content = data.get('content', '')
 
     # 创建时可选启用密码锁定（article 类型才允许）
+    # Optionally enable the password lock at creation (articles only)
     want_lock = bool(data.get('is_locked')) and type_ == 'article'
     lock_pwd = (data.get('lock_password') or '').strip() if want_lock else ''
 
@@ -140,6 +187,7 @@ def create_node():
     )
 
     # 启用锁定必须设置密码
+    # Enabling the lock requires a passphrase
     if want_lock:
         if not lock_pwd:
             return jsonify({'error': '启用锁定必须设置密码'}), 400
@@ -147,6 +195,7 @@ def create_node():
         node.lock_password_hash = generate_password_hash(lock_pwd)
 
     # article 类型的内容用 RSA 混合加密存储
+    # Article content is stored with RSA hybrid encryption
     if type_ == 'article' and content and current_user.rsa_public_key:
         enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
         node.content = enc_content
@@ -154,10 +203,13 @@ def create_node():
 
     db.session.add(node)
     db.session.commit()
+    if content:
+        _schedule_embedding(node.id)
     return jsonify(_node_dict(node)), 201
 
 
 # 判断用户是否有权限访问该节点
+# Check whether a user may access a node
 def _can_access(node: Node, user: User) -> bool:
     if node.owner_id is None:
         return True
@@ -172,6 +224,7 @@ def _can_access(node: Node, user: User) -> bool:
 @views_bp.route('/nodes/<int:node_id>', methods=['GET'])
 @login_required
 # 获取单个节点的详细信息
+# Return the details of a single node
 def get_node(node_id):
     node = Node.query.get_or_404(node_id)
     data = _node_dict(node)
@@ -185,6 +238,7 @@ def get_node(node_id):
     data['unlocked'] = False  # 锁定严格生效，每次打开都需输入密码；解锁仅用于本次响应，不跨请求保留
 
     # 锁定状态的文章一律不返回明文内容，前端展示密码解锁遮罩
+    # A locked article never returns plaintext; the UI shows the password overlay
     if node.is_locked:
         data['content'] = ''
         grantee_list = _grantee_list(node)
@@ -192,12 +246,13 @@ def get_node(node_id):
         return jsonify(data), 200
 
     # 加密内容需要用所有者的私钥解密
+    # Encrypted content is decrypted with the owner's private key
     if node.encrypted_key:
         try:
             owner = User.query.get(node.owner_id) if node.owner_id else current_user
             plaintext = decrypt_content(node.content, node.encrypted_key, owner.rsa_private_key)
             data['content'] = plaintext
-        except Exception as e:
+        except Exception:
             logger.exception('Decryption failed for node %d', node.id)
             data['content'] = '(decryption failed)'
     else:
@@ -209,6 +264,7 @@ def get_node(node_id):
 
 
 # 收集有访问权限的用户列表（被分享者）
+# Collect the users a node is shared with
 def _grantee_list(node: Node) -> list[dict]:
     grantees = NodePerm.query.filter_by(node_id=node.id, is_active=True).all()
     grantee_list = []
@@ -222,6 +278,7 @@ def _grantee_list(node: Node) -> list[dict]:
 @views_bp.route('/nodes/<int:node_id>/unlock', methods=['POST'])
 @login_required
 # 校验锁定密码，正确则返回明文内容并将会话标记为已解锁
+# Verify the lock password; on success return plaintext for this response only
 def unlock_node(node_id):
     node = Node.query.get_or_404(node_id)
     if not node.is_locked:
@@ -236,6 +293,7 @@ def unlock_node(node_id):
         return jsonify({'error': '密码错误'}), 401
 
     # 校验通过：解密返回内容；本次响应有效，下次 GET 仍会被锁定
+    # Password accepted: decrypt for this response only; the next GET is locked again
     content = node.content
     if node.encrypted_key and node.owner_id:
         owner = User.query.get(node.owner_id)
@@ -258,6 +316,7 @@ def unlock_node(node_id):
 @views_bp.route('/nodes/<int:node_id>', methods=['PUT'])
 @login_required
 # 更新节点标题或内容
+# Update a node's title or content
 def update_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -273,6 +332,7 @@ def update_node(node_id):
     if 'content' in data:
         plaintext = data['content'] or ''
         # 有公钥的文章内容先加密再存
+        # Article content is encrypted before saving when a key exists
         if node.type == 'article' and plaintext and current_user.rsa_public_key:
             enc_content, enc_key = encrypt_content(plaintext, current_user.rsa_public_key)
             node.content = enc_content
@@ -281,6 +341,7 @@ def update_node(node_id):
             node.content = plaintext
 
     # 锁定设置：仅文章类型，且只有所有者可操作
+    # Lock settings: articles only, and only the owner may change them
     if 'is_locked' in data:
         if node.type != 'article':
             return jsonify({'error': '只有文章支持密码锁定'}), 400
@@ -288,6 +349,7 @@ def update_node(node_id):
         lock_pwd = (data.get('lock_password') or '').strip()
         if want_lock:
             # 启用或改密码：若提供了新密码则更新；否则沿用旧哈希（已锁定时）
+            # Enable or rotate the passphrase: update when given, otherwise keep the old hash
             if lock_pwd:
                 node.lock_password_hash = generate_password_hash(lock_pwd)
             elif not node.lock_password_hash:
@@ -298,11 +360,15 @@ def update_node(node_id):
             node.lock_password_hash = None
 
     db.session.commit()
+    # 内容或标题变化会影响分块与向量，异步整篇重建
+    # Content or title changes affect chunks and vectors, so rebuild asynchronously
+    if 'content' in data or 'title' in data:
+        _schedule_embedding(node.id)
     result = _node_dict(node)
     if node.encrypted_key:
         try:
             result['content'] = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
-        except Exception as e:
+        except Exception:
             logger.exception('Decryption failed for node %d during update', node.id)
             result['content'] = node.content
     else:
@@ -313,10 +379,12 @@ def update_node(node_id):
 @views_bp.route('/nodes', methods=['GET'])
 @login_required
 # 返回节点树或平铺列表
+# Return the node tree, or a flat list when requested
 def list_nodes():
     flat = request.args.get('flat', '').lower() == 'true'
 
     # 只查自己拥有的 + 被授权访问的节点
+    # Only fetch nodes you own or were granted
     authorized_ids = set(
         r[0] for r in
         NodePerm.query.filter_by(grantee_id=current_user.id, is_active=True)
@@ -324,11 +392,13 @@ def list_nodes():
         .all()
     )
     # 自己的节点 + 被授权的节点
+    # Your own nodes plus the ones granted to you
     all_nodes = Node.query.filter(
         db.or_(Node.owner_id == current_user.id, Node.id.in_(authorized_ids))
     ).order_by(Node.sort_order, Node.created_at).all()
 
     # 把授权节点的父级链也补上，保证树能正常展示
+    # Add the ancestor chain of granted nodes so the tree renders correctly
     parent_ids = set()
     for node in all_nodes:
         pid = node.parent_id
@@ -359,17 +429,20 @@ def list_nodes():
 @views_bp.route('/nodes/<int:node_id>', methods=['DELETE'])
 @login_required
 # 删除节点及其所有子节点
+# Delete a node together with its descendants
 def delete_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
         return jsonify({'error': '无权删除此节点'}), 403
 
     # 如果节点是根级别的 article 类型，需要特殊处理（防止所有根节点都是 article）
+    # Special-case root-level articles so the root level does not become all articles
     if node.parent_id is None and node.type == 'article':
         if node.type != 'document':
             node.type = 'document'
 
     # 找到所有子节点并按 sort_order 排序
+    # Collect children ordered by sort_order
     children = Node.query.filter_by(parent_id=node.parent_id).order_by(Node.sort_order).all()
     sibling_count = 0
     for child in children:
@@ -377,16 +450,20 @@ def delete_node(node_id):
             sibling_count += 1
 
     # 收集所有后代节点 ID
+    # Collect every descendant node id
     subtree_ids = _get_subtree_ids(node.id)
 
     # 删除节点及其所有子节点的权限记录
+    # Delete permission rows for the node and its descendants
     all_ids = [node.id] + subtree_ids
     NodePerm.query.filter(NodePerm.node_id.in_(all_ids)).delete(synchronize_session=False)
 
     # 删除所有子节点
+    # Delete all descendant nodes
     Node.query.filter(Node.id.in_(subtree_ids)).delete(synchronize_session=False)
 
     # 更新兄弟节点的 sort_order（把后面的节点往前移）
+    # Shift the following siblings' sort_order forward
     if node.parent_id is not None:
         siblings = Node.query.filter(
             Node.parent_id == node.parent_id,
@@ -398,12 +475,17 @@ def delete_node(node_id):
     db.session.delete(node)
     db.session.commit()
 
+    # 清掉被删除节点及其后代的向量索引
+    # Drop the vector index of the deleted node and its descendants
+    _drop_embedding(all_ids)
+
     return jsonify({'message': f'节点已删除，{sibling_count} 个子节点已上移'}), 200
 
 
 @views_bp.route('/nodes/<int:node_id>/move', methods=['PUT'])
 @login_required
 # 移动节点到新的父节点下
+# Move a node under a new parent
 def move_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -413,6 +495,7 @@ def move_node(node_id):
     new_parent_id = data.get('parent_id')
 
     # 检查是否形成循环引用
+    # Reject moves that would create a cycle
     if new_parent_id == node.id:
         return jsonify({'error': '不能移动到自身'}), 400
     if new_parent_id is not None:
@@ -428,6 +511,7 @@ def move_node(node_id):
 @views_bp.route('/nodes/<int:node_id>/rename', methods=['PUT'])
 @login_required
 # 重命名节点标题
+# Rename a node's title
 def rename_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -442,12 +526,16 @@ def rename_node(node_id):
 
     node.title = new_title
     db.session.commit()
+    # 标题会作为分块前缀参与编码，改名后需要重建
+    # The title is part of every chunk prefix, so a rename needs a rebuild
+    _schedule_embedding(node.id)
     return jsonify(_node_dict(node)), 200
 
 
 @views_bp.route('/nodes/search', methods=['GET'])
 @login_required
 # 按标题关键词搜索节点
+# Search nodes by title keyword
 def search_nodes():
     q = (request.args.get('q') or '').strip()
     type_filter = (request.args.get('type') or '').strip()
@@ -455,6 +543,7 @@ def search_nodes():
         return jsonify({'nodes': []}), 200
 
     # 只搜索用户有权限访问的节点
+    # Only search nodes the user may access
     authorized_ids = set(
         r[0] for r in
         NodePerm.query.filter_by(grantee_id=current_user.id, is_active=True)
@@ -472,9 +561,94 @@ def search_nodes():
     return jsonify({'nodes': [_node_dict(n) for n in nodes]}), 200
 
 
+@views_bp.route('/nodes/semantic-search', methods=['GET'])
+@login_required
+# 语义检索：按向量相似度召回，只返回有权限且未锁定的文章
+# Semantic search: recall by vector similarity, filtered by permission and lock
+def semantic_search_nodes():
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'results': []}), 200
+
+    try:
+        limit = int(request.args.get('limit', 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 30))
+
+    if not embedding_available():
+        return jsonify({'error': '语义检索不可用：缺少 embedding 依赖或模型文件'}), 503
+
+    try:
+        query_vec = embed_query(q)
+        conn = vs.connect()
+    except Exception:
+        logger.exception('语义检索初始化失败')
+        return jsonify({'error': '语义检索初始化失败，请查看服务日志'}), 503
+
+    try:
+        hits = vs.search(conn, query_vec, current_user.id, limit=limit)
+    except Exception:
+        logger.exception('语义检索查询失败')
+        return jsonify({'error': '语义检索查询失败'}), 500
+    finally:
+        conn.close()
+
+    # 批量取节点，避免逐条查询
+    # Fetch nodes in one query instead of one by one
+    node_ids = [h['node_id'] for h in hits]
+    nodes = {}
+    if node_ids:
+        nodes = {n.id: n for n in Node.query.filter(Node.id.in_(node_ids)).all()}
+
+    results = []
+    for hit in hits:
+        node = nodes.get(hit['node_id'])
+        if not node:
+            continue
+        # 向量已归一化，距离 d 与余弦相似度的关系为 cos = 1 - d^2/2
+        # Vectors are normalised, so cosine similarity is 1 - d^2/2
+        distance = float(hit['distance'])
+        score = max(0.0, min(1.0, 1.0 - (distance * distance) / 2.0))
+        results.append({
+            'node': _node_dict(node),
+            'chunk_index': hit['chunk_index'],
+            'snippet': _make_snippet(hit['text']),
+            'distance': distance,
+            'score': score,
+        })
+
+    return jsonify({'results': results}), 200
+
+
+@views_bp.route('/nodes/index-events', methods=['GET'])
+@login_required
+# 轮询向量转换事件：把后台异步重建的结果告诉前端做 toast 提示
+# Poll vector conversion events so the page can show a toast
+def index_events():
+    from ..services.index_queue import events_after, latest_seq
+
+    after_raw = request.args.get('after')
+    # 首次调用不带 after：只返回游标，避免把历史事件当新事件重复提示
+    # Called without `after`: return only the cursor so old events are not replayed
+    if after_raw is None:
+        return jsonify({'events': [], 'latest': latest_seq()}), 200
+
+    try:
+        after = int(after_raw)
+    except (TypeError, ValueError):
+        after = 0
+
+    return jsonify({
+        'events': events_after(after, current_user.id),
+        'latest': latest_seq(),
+    }), 200
+
+
 @views_bp.route('/nodes/<int:node_id>/share', methods=['POST'])
 @login_required
 # 把节点分享给其他用户
+# Share a node with another user
 def share_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -488,6 +662,7 @@ def share_node(node_id):
         return jsonify({'error': '用户不存在或未激活'}), 404
 
     # 检查是否已有活跃的分享记录
+    # Check for an existing active grant
     existing = NodePerm.query.filter_by(
         node_id=node.id, grantee_id=grantee_id
     ).first()
@@ -498,17 +673,6 @@ def share_node(node_id):
     if not grantee.rsa_public_key:
         return jsonify({'error': '该用户暂未生成加密密钥'}), 400
 
-    # 先解密再重新加密（用所有者的私钥解密原文）
-    content_plain = node.content
-    if node.encrypted_key and node.owner_id:
-        owner = User.query.get(node.owner_id)
-        if owner:
-            try:
-                content_plain = decrypt_content(node.content, node.encrypted_key, owner.rsa_private_key)
-            except Exception as e:
-                logger.exception('Decryption failed for node %d during share', node.id)
-                return jsonify({'error': '解密内容失败'}), 500
-
     if existing:
         existing.is_active = True
         db.session.commit()
@@ -517,11 +681,13 @@ def share_node(node_id):
         db.session.add(perm)
         db.session.commit()
 
-    # 发送邮件通知被分享者
+    # 发送邮件通知被分享者（按分享者当前语言生成中/英邮件）
+    # Notify the recipient by email, written in the sharer's current language
+    from ..services.i18n import t as _t
     send_notification(
         to_email=grantee.email,
-        subject=f'{current_user.nickname} 分享了文档《{node.title}》给你',
-        body=f'用户 {current_user.nickname} 将文档《{node.title}》分享给了你，请登录查看。',
+        subject=_t('email.share.subject', nickname=current_user.nickname, title=node.title),
+        body=_t('email.share.body', nickname=current_user.nickname, title=node.title),
     )
 
     return jsonify({'message': f'已将「{node.title}」分享给 {grantee.nickname}！'}), 200
@@ -530,6 +696,7 @@ def share_node(node_id):
 @views_bp.route('/nodes/<int:node_id>/share/<int:grantee_id>', methods=['DELETE'])
 @login_required
 # 取消分享，收回访问权限
+# Revoke a share and take the access away
 def revoke_share(node_id, grantee_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -549,6 +716,7 @@ def revoke_share(node_id, grantee_id):
 @views_bp.route('/nodes/import/batch', methods=['POST'])
 @login_required
 # 批量导入 JSON 格式的节点数据
+# Import nodes from a JSON payload
 def batch_import():
     data = request.get_json(force=True)
     nodes_data = data.get('nodes', [])
@@ -556,6 +724,7 @@ def batch_import():
         return jsonify({'error': '没有可导入的数据'}), 400
 
     created = 0
+    created_nodes = []
     for item in nodes_data:
         title = item.get('title', '').strip()
         parent_id = item.get('parent_id')
@@ -573,6 +742,7 @@ def batch_import():
             owner_id=current_user.id,
         )
         # 导入时如果有公钥也做加密
+        # Encrypt on import as well when a public key exists
         if content and current_user.rsa_public_key:
             enc_content, enc_key = encrypt_content(content, current_user.rsa_public_key)
             node.content = enc_content
@@ -580,14 +750,21 @@ def batch_import():
 
         db.session.add(node)
         created += 1
+        created_nodes.append(node)
 
     db.session.commit()
+    # 导入的内容也要进向量库
+    # Imported content is indexed too
+    for n in created_nodes:
+        if n.content:
+            _schedule_embedding(n.id)
     return jsonify({'message': f'成功导入 {created} 个节点'}), 201
 
 
 @views_bp.route('/nodes/import/file', methods=['POST'])
 @login_required
 # 上传文件并导入为新节点
+# Upload a file and import it as a new node
 def import_file():
     parent_id = request.form.get('parent_id', type=int)
     parent = None
@@ -608,6 +785,7 @@ def import_file():
     ext = os.path.splitext(filename)[1].lower()
 
     # 处理纯文本文件
+    # Plain text and source files
     if ext in ('.txt', '.md', '.markdown', '.py', '.js', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.log', '.csv', '.tsv', '.sql', '.sh', '.bat', '.rst', '.tex'):
         try:
             content = file.read().decode('utf-8')
@@ -630,13 +808,17 @@ def import_file():
 
         db.session.add(node)
         db.session.commit()
+        if node.content:
+            _schedule_embedding(node.id)
         return jsonify(_node_dict(node)), 201
 
     # 处理 Word 文档
+    # Word documents
     if ext == '.docx':
         return _import_docx(file, parent_id if parent else None)
 
     # 处理 Excel 文件
+    # Excel workbooks
     if ext in ('.xlsx', '.xlsm'):
         return _import_excel(file, parent_id if parent else None)
 
@@ -644,6 +826,7 @@ def import_file():
 
 
 # 导入 Word 文档并转成 Markdown（图片保留在文档原始位置）
+# Import a Word document as Markdown, keeping images in their original position
 def _import_docx(file, parent_id):
     try:
         import docx  # type: ignore
@@ -657,6 +840,7 @@ def _import_docx(file, parent_id):
         return jsonify({'error': '无法解析该 Word 文档'}), 400
 
     # 第一步：预提取所有图片并保存到统一图片目录，建立 rId → markdown 图片引用的映射
+    # Step 1: extract every image into the shared directory and map rId to Markdown
     image_rels = {}
     for rel_id, rel in doc.part.rels.items():
         if 'image' in rel.reltype:
@@ -667,22 +851,26 @@ def _import_docx(file, parent_id):
                 if not ext:
                     ext = '.png'
                 # 统一重命名后存入个人数据资产 imgs 目录
+                # Rename and store it in the personal asset image directory
                 fname, url = _save_image_bytes(img_bytes, ext)
                 image_rels[rel_id] = f'![image]({url})'
             except Exception:
                 pass
 
     # 第二步：逐段落处理，在原始位置插入图片
+    # Step 2: walk paragraphs and insert images where they appear
     md_parts = []
     for para in doc.paragraphs:
         style = para.style.name if para.style else ''
         para_element = para._element
 
         # 检测段落是否包含图片（<w:drawing> 元素）
+        # Detect whether a paragraph contains a drawing
         drawings = para_element.findall(f'.//{qn("w:drawing")}')
 
         if not drawings:
             # 无图片，使用简单的文本提取
+            # No image: take the plain text
             text = para.text.strip()
             if not text:
                 md_parts.append('')
@@ -699,14 +887,17 @@ def _import_docx(file, parent_id):
                 md_parts.append(text)
         else:
             # 包含图片，逐 run 处理以保持图片在文档中的原始位置
+            # Has images: walk runs so each image keeps its position
             line_parts = []
             seen_rids = set()  # 避免重复处理（如 mc:AlternateContent）
 
             for run_element in para_element.findall(qn('w:r')):
                 # 按文档顺序遍历 run 的子元素，保证文本和图片的相对位置
+                # Walk the run's children in document order to keep text and images aligned
                 for child in run_element:
                     if child.tag == qn('w:drawing'):
                         # 处理图片
+                        # Handle the image
                         for blip in child.findall(f'.//{qn("a:blip")}'):
                             embed = blip.get(qn('r:embed'))
                             if embed and embed in image_rels and embed not in seen_rids:
@@ -719,6 +910,7 @@ def _import_docx(file, parent_id):
 
             if line_parts:
                 # 检查是否是标题段落
+                # Map heading styles to Markdown headings
                 heading_prefix = ''
                 if 'Heading 1' in style:
                     heading_prefix = '# '
@@ -741,10 +933,6 @@ def _import_docx(file, parent_id):
     title = file.filename.rsplit('.', 1)[0] if hasattr(file, 'filename') else '导入文档'
     file.seek(0)
 
-    parent_node = None
-    if parent_id:
-        parent_node = Node.query.get(parent_id)
-
     node = Node(
         title=title,
         parent_id=parent_id,
@@ -759,10 +947,12 @@ def _import_docx(file, parent_id):
 
     db.session.add(node)
     db.session.commit()
+    _schedule_embedding(node.id)
     return jsonify(_node_dict(node)), 201
 
 
 # 导入 Excel 文件并转成 Markdown 表格
+# Import an Excel workbook as Markdown tables
 def _import_excel(file, parent_id):
     try:
         import openpyxl  # type: ignore
@@ -785,13 +975,16 @@ def _import_excel(file, parent_id):
             continue
 
         # 第一行作为表头
+        # Use the first row as the header
         header = rows[0]
         md_parts.append('| ' + ' | '.join(str(c or '') for c in header) + ' |')
         md_parts.append('| ' + ' | '.join('---' for _ in header) + ' |')
 
         # 数据行
+        # Data rows
         for row in rows[1:]:
             # 行列对齐，补足长度
+            # Pad rows so every row has the header's column count
             cells = list(row) + [None] * (len(header) - len(row))
             md_parts.append('| ' + ' | '.join(str(c or '') for c in cells[:len(header)]) + ' |')
 
@@ -816,10 +1009,12 @@ def _import_excel(file, parent_id):
 
     db.session.add(node)
     db.session.commit()
+    _schedule_embedding(node.id)
     return jsonify(_node_dict(node)), 201
 
 
 # 校验目标父节点是否属于当前用户
+# Verify the target parent node belongs to the caller
 def _check_parent_owner(parent_id):
     if parent_id:
         parent = Node.query.get(parent_id)
@@ -833,6 +1028,7 @@ def _check_parent_owner(parent_id):
 @views_bp.route('/nodes/<int:parent_id>/import', methods=['POST'])
 @login_required
 # 导入 Markdown/纯文本文件到指定父节点下
+# Import a Markdown or plain text file under the given parent
 def import_to_node(parent_id):
     real_parent_id, err = _check_parent_owner(parent_id)
     if err:
@@ -870,12 +1066,14 @@ def import_to_node(parent_id):
 
     db.session.add(node)
     db.session.commit()
+    _schedule_embedding(node.id)
     return jsonify(_node_dict(node)), 201
 
 
 @views_bp.route('/nodes/<int:parent_id>/import-word', methods=['POST'])
 @login_required
 # 导入 Word 文档到指定父节点下
+# Import a Word document under the given parent
 def import_word_to_node(parent_id):
     real_parent_id, err = _check_parent_owner(parent_id)
     if err:
@@ -896,6 +1094,7 @@ def import_word_to_node(parent_id):
 @views_bp.route('/nodes/<int:parent_id>/import-excel', methods=['POST'])
 @login_required
 # 导入 Excel 文件到指定父节点下
+# Import an Excel workbook under the given parent
 def import_excel_to_node(parent_id):
     real_parent_id, err = _check_parent_owner(parent_id)
     if err:
@@ -916,6 +1115,7 @@ def import_excel_to_node(parent_id):
 @views_bp.route('/nodes/batch-authorize', methods=['POST'])
 @login_required
 # 批量授权或撤销节点权限
+# Grant or revoke node permissions in bulk
 def batch_authorize():
     data = request.get_json(force=True)
     node_ids = data.get('node_ids', [])
@@ -927,18 +1127,21 @@ def batch_authorize():
         return jsonify({'error': '节点和用户不能为空'}), 400
 
     # 收集需要操作的节点 ID（含子节点）
+    # Collect the target node ids, optionally including descendants
     target_node_ids = set(node_ids)
     if recursive:
         for nid in node_ids:
             target_node_ids.update(_get_subtree_ids(nid))
 
     # 校验所有节点都属于当前用户
+    # Verify every node belongs to the caller
     nodes = Node.query.filter(Node.id.in_(target_node_ids)).all()
     for n in nodes:
         if n.owner_id != current_user.id:
             return jsonify({'error': f'无权操作节点 {n.id}'}), 403
 
     # 校验所有目标用户
+    # Verify every target user exists
     grantees = User.query.filter(User.id.in_(user_ids)).all()
     if len(grantees) != len(user_ids):
         return jsonify({'error': '部分用户不存在'}), 404
@@ -952,6 +1155,7 @@ def batch_authorize():
 
             if is_active:
                 # 授权
+                # Grant
                 if perm and perm.is_active:
                     continue
                 if perm:
@@ -965,6 +1169,7 @@ def batch_authorize():
                 granted += 1
             else:
                 # 撤销
+                # Revoke
                 if perm and perm.is_active:
                     perm.is_active = False
                     revoked += 1
@@ -978,6 +1183,7 @@ def batch_authorize():
 @views_bp.route('/nodes/<int:node_id>/transfer', methods=['POST'])
 @login_required
 # 转让节点所有权给其他用户
+# Transfer node ownership to another user
 def transfer_node(node_id):
     node = Node.query.get_or_404(node_id)
     if node.owner_id != current_user.id:
@@ -992,6 +1198,7 @@ def transfer_node(node_id):
         return jsonify({'error': '目标用户不存在或未激活'}), 404
 
     # 如果文章内容加密，需要用当前所有者私钥解密，再用新所有者公钥重新加密
+    # When encrypted, decrypt with the current owner's key and re-encrypt for the new owner
     if node.encrypted_key and node.content:
         try:
             plaintext = decrypt_content(node.content, node.encrypted_key, current_user.rsa_private_key)
@@ -1011,6 +1218,7 @@ def transfer_node(node_id):
     transferred = 1
 
     # 递归转让子节点
+    # Transfer descendants recursively
     if recursive:
         subtree_ids = _get_subtree_ids(node_id)
         for sid in subtree_ids:
@@ -1039,6 +1247,7 @@ def transfer_node(node_id):
 @views_bp.route('/images/upload', methods=['POST'])
 @login_required
 # 上传本地图片（markdown 写作用），统一重命名后存入 imgs 目录，返回可插入的访问 URL
+# Upload an editor image, rename it into the image directory, return its URL
 def upload_image():
     file = request.files.get('file')
     if not file:
@@ -1047,6 +1256,7 @@ def upload_image():
     filename = (file.filename or 'unnamed').strip()
     ext = os.path.splitext(filename)[1].lower()
     # 仅允许常见图片格式
+    # Only allow common image formats
     allowed = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg')
     if ext not in allowed:
         return jsonify({'error': f'不支持的图片格式: {ext}'}), 400
@@ -1058,7 +1268,7 @@ def upload_image():
 
     try:
         fname, url = _save_image_bytes(img_bytes, ext)
-    except Exception as e:
+    except Exception:
         logger.exception('保存上传图片失败')
         return jsonify({'error': '保存图片失败'}), 500
 
@@ -1068,6 +1278,7 @@ def upload_image():
 @views_bp.route('/users', methods=['GET'])
 @login_required
 # 列出可分享的用户（排除自己）
+# List users available for sharing, excluding yourself
 def list_users():
     users = User.query.filter(
         User.is_active == True, User.id != current_user.id

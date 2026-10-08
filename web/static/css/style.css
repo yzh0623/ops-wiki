@@ -192,6 +192,114 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   LANGUAGE SWITCH (segmented sliding pill: 中 | EN)
+   -------------------------------------------------------------------------- */
+.lang-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 64px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 999px;
+  background: var(--color-bg-hover-row);
+  user-select: none;
+  flex: none;
+}
+
+/* 滑块：宽度恰为一半，translateX(100%) 正好落到第二格
+   Thumb: exactly half the width, so translateX(100%) lands on the second slot */
+.lang-switch-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-normal);
+  pointer-events: none;
+}
+
+.lang-switch.is-en .lang-switch-thumb {
+  transform: translateX(100%);
+}
+
+.lang-switch button {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.lang-switch button:hover {
+  color: var(--color-text-body);
+}
+
+.lang-switch button.active {
+  color: var(--color-primary);
+}
+
+.lang-switch button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* 深色皮肤（顶栏 / banner）/ Dark skin for the top bar */
+.lang-switch--dark {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.lang-switch--dark .lang-switch-thumb {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.lang-switch--dark button {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.lang-switch--dark button:hover {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.lang-switch--dark button.active {
+  color: #1d3a63;
+}
+
+.lang-switch--dark button:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.9);
+}
+
+/* 登录 / 注册卡片：右上角，不打扰居中的品牌与标题
+   Auth cards: pin it to the top-right, away from the centred brand and title */
+.modal > .lang-switch {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lang-switch-thumb {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
    MAIN CONTAINER (Sidebar + Editor)
    -------------------------------------------------------------------------- */
 #main-container {
@@ -216,16 +324,46 @@ body {
 
 #sidebar-header {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
   padding: var(--space-4) var(--space-5) var(--space-3);
 }
 
-#sidebar-search {
+#sidebar-mode {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mode-btn {
   flex: 1;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-sidebar-muted);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn:hover {
+  color: var(--color-text-sidebar);
+  background: var(--color-bg-sidebar-hover);
+}
+
+.mode-btn.active {
+  color: var(--color-text-sidebar-active);
+  background: var(--color-bg-sidebar-selected);
+  border-color: transparent;
+}
+
+.sidebar-search-box {
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
 }
 
 .search-icon {
@@ -235,7 +373,7 @@ body {
   pointer-events: none;
 }
 
-#sidebar-search input {
+.sidebar-search-box input {
   width: 100%;
   padding: var(--space-3) var(--space-4) var(--space-3) var(--space-7);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -248,14 +386,76 @@ body {
   transition: all var(--transition-fast);
 }
 
-#sidebar-search input::placeholder {
+.sidebar-search-box input::placeholder {
   color: var(--color-text-sidebar-muted);
 }
 
-#sidebar-search input:focus {
+.sidebar-search-box input:focus {
   border-color: var(--color-primary);
   background: rgba(255, 255, 255, 0.1);
   box-shadow: 0 0 0 2px rgba(29, 58, 99, 0.25);
+}
+
+/* ─── 语义搜索结果面板 / Semantic search results panel ─── */
+#search-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3) var(--space-4);
+}
+
+.semantic-hint {
+  padding: var(--space-4);
+  color: var(--color-text-sidebar-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.semantic-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-sidebar);
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.semantic-item:hover {
+  background: var(--color-bg-sidebar-hover);
+  border-color: var(--color-bg-sidebar-selected);
+}
+
+.semantic-item-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-sidebar-active);
+}
+
+.semantic-item-score {
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-sidebar-muted);
+}
+
+.semantic-item-snippet {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--color-text-sidebar-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Sidebar Resize Divider */
@@ -423,7 +623,7 @@ body {
   margin-left: auto;
   flex-shrink: 0;
   padding-right: var(--space-1);
-  /* 增加与标签的间距，提升可读性 */
+  /* 增加与标签的间距，提升可读性 / extra gap after the label improves readability */
   margin-left: 8px;
 }
 
@@ -1070,7 +1270,8 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* Mermaid 图表：自适应宽度，随容器缩放，避免横向滚动条 */
+/* Mermaid 图表：自适应宽度，随容器缩放，避免横向滚动条
+   Mermaid diagrams scale with the container so no horizontal scrollbar appears */
 #html-preview .mermaid-block {
   display: flex;
   justify-content: center;
@@ -1091,7 +1292,7 @@ body {
   font-size: var(--font-size-sm);
   overflow-x: auto;
 }
-/* KaTeX 公式渲染失败时的纯文本降级展示 */
+/* KaTeX 公式渲染失败时的纯文本降级展示 / Plain-text fallback when KaTeX fails */
 #html-preview .math-fallback {
   background: #fff8e6;
   border: 1px dashed #e0c068;
@@ -1173,7 +1374,8 @@ body {
 }
 
 .modal {
-  /* 不透明背景兜底，避免 backdrop-filter 在某些渲染时序下出现内容穿透 */
+  /* 不透明背景兜底，避免 backdrop-filter 在某些渲染时序下出现内容穿透
+     Opaque fallback so backdrop-filter cannot let content bleed through */
   background: var(--color-bg-page);
   border-radius: var(--radius-xl);
   padding: var(--space-8);
@@ -1183,7 +1385,8 @@ body {
   max-height: 90vh;
   overflow-y: auto;
   isolation: isolate;
-  /* 关键修复：确保模态框自身始终不透明，不受 overlay 动画影响 */
+  /* 关键修复：确保模态框自身始终不透明，不受 overlay 动画影响
+     Keep the modal itself opaque regardless of the overlay animation */
   opacity: 1 !important;
   position: relative;
   z-index: 1;
@@ -1688,20 +1891,24 @@ mark.mark-current {
 }
 
 /* Dark scrollbar for sidebar */
-#tree-container::-webkit-scrollbar {
+#tree-container::-webkit-scrollbar,
+#search-results::-webkit-scrollbar {
   width: 6px;
 }
 
-#tree-container::-webkit-scrollbar-track {
+#tree-container::-webkit-scrollbar-track,
+#search-results::-webkit-scrollbar-track {
   background: transparent;
 }
 
-#tree-container::-webkit-scrollbar-thumb {
+#tree-container::-webkit-scrollbar-thumb,
+#search-results::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 
-#tree-container::-webkit-scrollbar-thumb:hover {
+#tree-container::-webkit-scrollbar-thumb:hover,
+#search-results::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
 
@@ -1751,9 +1958,10 @@ mark.mark-current {
   font-weight: var(--font-weight-semibold);
 }
 
-/* 长按拖拽时的提示光标 */
+/* 长按拖拽时的提示光标 / Cursor shown while a long-press drag is pending */
 .tree-item-content {
-  /* 保留原有的 cursor: pointer; 在长按后 JS 会覆盖 */
+  /* 保留原有的 cursor: pointer; 在长按后 JS 会覆盖
+     Keep cursor: pointer; JS overrides it once the long press fires */
 }
 
 /* --------------------------------------------------------------------------
