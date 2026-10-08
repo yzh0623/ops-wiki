@@ -41,7 +41,7 @@ sympy==1.14.0
 tokenizers==0.21.4
 torch==2.2.2+cpu
 tqdm==4.70.1
-transformers==4.51.3
+transformers==5.10.1
 typing_extensions==4.15.0
 urllib3==2.8.0
 vulture==2.16
