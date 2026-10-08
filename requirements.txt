@@ -34,7 +34,7 @@ regex==2026.9.29
 requests==2.34.2
 ruff==0.16.10
 safetensors==0.8.0
-setuptools==78.1.1
+setuptools==83.0.0
 SQLAlchemy==2.0.50
 sqlite-vec==0.1.9
 sympy==1.14.0
