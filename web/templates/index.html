@@ -371,7 +371,9 @@
   <!-- Scripts -->
   <script src="/static/js/marked.min.js"></script>
   <!-- Mermaid 流程图 / 时序图等图表渲染 / Mermaid rendering for diagrams -->
-  <script src="/static/vendor/mermaid.min.js"></script>
+  <!-- ?v= 版本串用于绕过浏览器缓存，升级 vendor 文件时请同步更新
+       ?v= busts the browser cache; bump it whenever the vendored file is upgraded -->
+  <script src="/static/vendor/mermaid.min.js?v=12.1.0"></script>
   <!-- KaTeX LaTeX 公式渲染 / KaTeX rendering for LaTeX math -->
   <script src="/static/vendor/katex.min.js"></script>
   <script src="/static/js/i18n.js"></script>

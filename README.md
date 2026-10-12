@@ -58,7 +58,7 @@
 - Tab 键缩进、Ctrl/⌘+S 手动保存
 - 自动保存：停止编辑满 1 分钟后自动静默保存，编辑过程中不会触发；保存成功时工具栏右侧显示绿色对勾 + 文案（手动保存为「保存成功」，自动保存为「自动保存成功」），5 秒后淡出消失
 - 未保存的修改在离开页面时仍会弹出提醒
-- Mermaid 图表：用 ```` ```mermaid ```` 围栏代码块写图表定义（flowchart / sequence / gantt 等），预览区自动渲染成矢量图，宽度跟着容器走，不会撑出横向滚动条
+- Mermaid 图表（v12）：用 ```` ```mermaid ```` 围栏代码块写图表定义（flowchart / sequence / class / state / ER / gantt / pie / journey / gitGraph / mindmap / timeline / quadrant / sankey / xychart / requirement / architecture / block / packet / kanban 等），预览区自动渲染成矢量图，宽度跟着容器走，不会撑出横向滚动条
 - LaTeX 公式：行内用 `$E=mc^2$`，块级用 `$$ \int_0^1 x^2\,dx=\frac13 $$`，由 KaTeX 渲染；公式有误时回退成纯文本而不是整段报错
 - 预览区自适应：表格单元格会自动换行，图片按容器宽度等比缩放，都不会出现横向滚动条
 
@@ -132,16 +132,16 @@
 
 | 文件 | 需要修改的项 | 默认值（作者机器） | 说明 |
 |------|--------------|--------------------|------|
-| `src/ops_wiki/core/config.py` | `_ASSET_ROOT` | `/home/yzh/Documents/docs/myself/knowledge` | **必改**。数据库与图片的存放根目录。别的机器上通常无权在该路径创建目录，不改会直接报权限错误 |
+| `src/ops_wiki/core/config.py` | `_ASSET_ROOT` | `/home/ph/Documents/docs/myself/knowledge` | **必改**。数据库与图片的存放根目录。别的机器上通常无权在该路径创建目录，不改会直接报权限错误 |
 | `src/ops_wiki/core/config.py` | `Config.SECRET_KEY` | 一段固定的十六进制字符串 | **必改**。影响 session 签名（不参与内容加密，内容走 RSA）。多实例部署时更要保证一致且保密 |
 | `run.sh` | `CONDA_ENV` | `wiki` | **必改**。你要使用的 conda 环境名 |
-| `run.sh` | `CONDA_BASE` | `/home/yzh/.conda` | **必改**。conda 的安装位置 |
+| `run.sh` | `CONDA_BASE` | `/home/ph/.conda` | **必改**。conda 的安装位置 |
 | `run.sh` | `source ".../conda.sh"` | `/root/miniconda3/etc/profile.d/conda.sh` | **必改**。conda 初始化脚本路径，最容易漏掉，不对就起不来 |
-| `run.sh` | `LOG_DIR` | `/home/yzh/Documents/logs/ops-wiki` | 日志与 PID 文件目录，需保证可写 |
+| `run.sh` | `LOG_DIR` | `/home/ph/Documents/logs/ops-wiki` | 日志与 PID 文件目录，需保证可写 |
 | `run.sh` | `HOST` / `PORT` | `0.0.0.0` / `5100` | 监听地址与端口。自用建议改成 `127.0.0.1` |
-| `wsgi.py` | `LOG_DIR` 默认值 | `/home/yzh/Documents/logs/ops-wiki` | 直接 `python wsgi.py` 运行时的日志目录；用 `run.sh` 时会由环境变量覆盖 |
+| `wsgi.py` | `LOG_DIR` 默认值 | `/home/ph/Documents/logs/ops-wiki` | 直接 `python wsgi.py` 运行时的日志目录；用 `run.sh` 时会由环境变量覆盖 |
 | `src/ops_wiki/core/config.py` | `MAIL_SERVER` 等 | 未定义 | 需要邮件通知时自行在 `Config` 里补上（见「配置」第 3 点） |
-| 环境变量 | `OPS_WIKI_EMBED_MODEL` | `/home/yzh/Documents/modelscope/qwen/embedding` | 本地 embedding 模型目录，模型需自行下载 |
+| 环境变量 | `OPS_WIKI_EMBED_MODEL` | `/home/ph/Documents/modelscope/qwen/embedding` | 本地 embedding 模型目录，模型需自行下载 |
 
 > 只改 `run.sh` 的 conda 路径和 `config.py` 的 `_ASSET_ROOT` 这两处，基本就能在本机跑起来；其余按需调整（参考下面的「环境变量速查」表）。
 >
@@ -169,7 +169,7 @@ pip install -r requirements.txt
 **1. 数据资产路径（部署到别的机器必须改）**
 
 ```python
-_ASSET_ROOT = "/home/yzh/Documents/docs/myself/knowledge"   # 改为你自己的目录
+_ASSET_ROOT = "/home/ph/Documents/docs/myself/knowledge"   # 改为你自己的目录
 ```
 
 数据库和图片都放在这个目录下（`db/ops-wiki/wiki.sqlite`、`imgs/`），已加入 `.gitignore`，不会随代码提交。
@@ -198,7 +198,7 @@ MAIL_SENDER = 'noreply@ops-wiki.local'
 
 **4. 向量索引模型**
 
-模型目录默认 `/home/yzh/Documents/modelscope/qwen/embedding`，可用环境变量覆盖：
+模型目录默认 `/home/ph/Documents/modelscope/qwen/embedding`，可用环境变量覆盖：
 
 ```bash
 export OPS_WIKI_EMBED_MODEL=/path/to/Qwen3-Embedding-0.6B
@@ -226,7 +226,7 @@ python scripts/build_vectors.py --prune      # 顺带清理已删除节点的残
 
 ### 启动
 
-项目提供了 `run.sh` 一键脚本，使用 conda 的 `wiki` 环境，日志输出到 `/home/yzh/Documents/logs/ops-wiki`。
+项目提供了 `run.sh` 一键脚本，使用 conda 的 `wiki` 环境，日志输出到 `/home/ph/Documents/logs/ops-wiki`。
 
 > ⚠️ 首次使用前请先按「部署前必须修改的地方」改掉 `run.sh` 里的 conda 路径（`CONDA_ENV`、`CONDA_BASE`、`conda.sh` 的路径）和 `LOG_DIR`，否则会启动失败。
 
@@ -256,9 +256,9 @@ gunicorn -w 1 -b 0.0.0.0:5100 wsgi:app
 | 变量 | 作用 | 默认值 |
 |------|------|--------|
 | `OPS_WIKI_MODE` | `dev`（Flask 内置服务器）或 `gunicorn` | `dev` |
-| `LOG_DIR` | 日志目录 | `/home/yzh/Documents/logs/ops-wiki` |
+| `LOG_DIR` | 日志目录 | `/home/ph/Documents/logs/ops-wiki` |
 | `FLASK_DEBUG` | 是否开启 Flask debug | `false` |
-| `OPS_WIKI_EMBED_MODEL` | embedding 模型目录 | `/home/yzh/Documents/modelscope/qwen/embedding` |
+| `OPS_WIKI_EMBED_MODEL` | embedding 模型目录 | `/home/ph/Documents/modelscope/qwen/embedding` |
 | `OPS_WIKI_EMBED_DEVICE` | 推理设备 | `cpu` |
 | `OPS_WIKI_EMBED_DTYPE` | 权重精度 `fp32` / `bf16` | `fp32` |
 | `OPS_WIKI_EMBED_THREADS` | CPU 推理线程数 | `4` |
@@ -309,7 +309,7 @@ ops-wiki/
 └── （仓库外，路径见 config.py 的 _ASSET_ROOT）
     ├── db/ops-wiki/wiki.sqlite   # SQLite 数据库（自动创建）
     └── imgs/                     # 上传 / 导入的图片（自动创建）
-    # 日志：/home/yzh/Documents/logs/ops-wiki/ops-wiki.log
+    # 日志：/home/ph/Documents/logs/ops-wiki/ops-wiki.log
 ```
 
 ### 目录划分原则

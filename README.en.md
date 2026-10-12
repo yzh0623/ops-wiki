@@ -58,7 +58,7 @@ It organizes documents as a tree, gives you Markdown editing with live preview, 
 - Tab to indent, Ctrl/⌘+S to save manually
 - Autosave: one minute after you stop typing it saves silently in the background (never while you are still typing). A green check plus a label appears on the right of the toolbar — "Saved" for manual saves, "Autosaved" for automatic ones — and fades out after 5 seconds
 - A warning still appears if you leave the page with unsaved changes
-- Mermaid diagrams: use a ```` ```mermaid ```` fenced block (flowchart / sequence / gantt, etc.) and the preview renders it as a vector diagram that respects container width, so no horizontal scrollbar
+- Mermaid diagrams (v12): use a ```` ```mermaid ```` fenced block (flowchart / sequence / class / state / ER / gantt / pie / journey / gitGraph / mindmap / timeline / quadrant / sankey / xychart / requirement / architecture / block / packet / kanban, etc.) and the preview renders it as a vector diagram that respects container width, so no horizontal scrollbar
 - LaTeX math: inline with `$E=mc^2$`, display with `$$ \int_0^1 x^2\,dx=\frac13 $$`, rendered by KaTeX; a malformed formula falls back to plain text instead of breaking the whole block
 - Preview adapts to width: table cells wrap and images scale to the container, with no horizontal overflow
 
@@ -132,16 +132,16 @@ Paths in this repository are hard-coded to the author's machine, so **a fresh cl
 
 | File | What to change | Default (author's machine) | Notes |
 |------|----------------|----------------------------|-------|
-| `src/ops_wiki/core/config.py` | `_ASSET_ROOT` | `/home/yzh/Documents/docs/myself/knowledge` | **Required.** Root directory for the database and images. On another machine you usually cannot create that path and will get a permission error |
+| `src/ops_wiki/core/config.py` | `_ASSET_ROOT` | `/home/ph/Documents/docs/myself/knowledge` | **Required.** Root directory for the database and images. On another machine you usually cannot create that path and will get a permission error |
 | `src/ops_wiki/core/config.py` | `Config.SECRET_KEY` | a fixed hex string | **Required.** Signs sessions (it does not encrypt content — that is RSA). With multiple instances it must be identical and secret |
 | `run.sh` | `CONDA_ENV` | `wiki` | **Required.** The conda environment to use |
-| `run.sh` | `CONDA_BASE` | `/home/yzh/.conda` | **Required.** Where conda is installed |
+| `run.sh` | `CONDA_BASE` | `/home/ph/.conda` | **Required.** Where conda is installed |
 | `run.sh` | `source ".../conda.sh"` | `/root/miniconda3/etc/profile.d/conda.sh` | **Required.** The conda init script. Easiest one to miss; a wrong path means the service will not start at all |
-| `run.sh` | `LOG_DIR` | `/home/yzh/Documents/logs/ops-wiki` | Log and PID directory; must be writable |
+| `run.sh` | `LOG_DIR` | `/home/ph/Documents/logs/ops-wiki` | Log and PID directory; must be writable |
 | `run.sh` | `HOST` / `PORT` | `0.0.0.0` / `5100` | Bind address and port. Use `127.0.0.1` for personal use |
-| `wsgi.py` | `LOG_DIR` default | `/home/yzh/Documents/logs/ops-wiki` | Log directory when running `python wsgi.py` directly (overridden by the env var under `run.sh`) |
+| `wsgi.py` | `LOG_DIR` default | `/home/ph/Documents/logs/ops-wiki` | Log directory when running `python wsgi.py` directly (overridden by the env var under `run.sh`) |
 | `src/ops_wiki/core/config.py` | `MAIL_SERVER` etc. | not defined | Add them to `Config` if you want email notifications (see point 3 under Configuration) |
-| Environment variable | `OPS_WIKI_EMBED_MODEL` | `/home/yzh/Documents/modelscope/qwen/embedding` | Local embedding model directory; download the model yourself |
+| Environment variable | `OPS_WIKI_EMBED_MODEL` | `/home/ph/Documents/modelscope/qwen/embedding` | Local embedding model directory; download the model yourself |
 
 > Changing just the conda paths in `run.sh` and `_ASSET_ROOT` in `config.py` is enough to get it running locally; everything else is optional (see the environment variable table below).
 >
@@ -169,7 +169,7 @@ Everything lives in `src/ops_wiki/core/config.py`. The important parts (see the 
 **1. Data asset path (must be changed on any other machine)**
 
 ```python
-_ASSET_ROOT = "/home/yzh/Documents/docs/myself/knowledge"   # point this at your own directory
+_ASSET_ROOT = "/home/ph/Documents/docs/myself/knowledge"   # point this at your own directory
 ```
 
 The database and images live under this directory (`db/ops-wiki/wiki.sqlite`, `imgs/`). They are covered by `.gitignore` and are never committed.
@@ -198,7 +198,7 @@ Without this the app still runs fine; emails are simply logged instead (you will
 
 **4. Embedding model**
 
-The model directory defaults to `/home/yzh/Documents/modelscope/qwen/embedding` and can be overridden by environment variables:
+The model directory defaults to `/home/ph/Documents/modelscope/qwen/embedding` and can be overridden by environment variables:
 
 ```bash
 export OPS_WIKI_EMBED_MODEL=/path/to/Qwen3-Embedding-0.6B
@@ -226,7 +226,7 @@ python scripts/build_vectors.py --prune      # also drop vectors for deleted nod
 
 ### Run
 
-`run.sh` is a convenience wrapper that uses the conda environment `wiki` and logs to `/home/yzh/Documents/logs/ops-wiki`.
+`run.sh` is a convenience wrapper that uses the conda environment `wiki` and logs to `/home/ph/Documents/logs/ops-wiki`.
 
 > ⚠️ Before the first run, change the conda paths in `run.sh` (`CONDA_ENV`, `CONDA_BASE` and the `conda.sh` path) plus `LOG_DIR`, as listed under "Changes required before deploying" — otherwise it will fail to start.
 
@@ -256,9 +256,9 @@ gunicorn -w 1 -b 0.0.0.0:5100 wsgi:app
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `OPS_WIKI_MODE` | `dev` (Flask dev server) or `gunicorn` | `dev` |
-| `LOG_DIR` | Log directory | `/home/yzh/Documents/logs/ops-wiki` |
+| `LOG_DIR` | Log directory | `/home/ph/Documents/logs/ops-wiki` |
 | `FLASK_DEBUG` | Enable Flask debug mode | `false` |
-| `OPS_WIKI_EMBED_MODEL` | Embedding model directory | `/home/yzh/Documents/modelscope/qwen/embedding` |
+| `OPS_WIKI_EMBED_MODEL` | Embedding model directory | `/home/ph/Documents/modelscope/qwen/embedding` |
 | `OPS_WIKI_EMBED_DEVICE` | Inference device | `cpu` |
 | `OPS_WIKI_EMBED_DTYPE` | Weight precision: `fp32` / `bf16` | `fp32` |
 | `OPS_WIKI_EMBED_THREADS` | CPU inference threads | `4` |
@@ -309,7 +309,7 @@ ops-wiki/
 └── (outside the repo; see _ASSET_ROOT in config.py)
     ├── db/ops-wiki/wiki.sqlite   # SQLite database (created automatically)
     └── imgs/                     # uploaded / imported images (created automatically)
-    # logs: /home/yzh/Documents/logs/ops-wiki/ops-wiki.log
+    # logs: /home/ph/Documents/logs/ops-wiki/ops-wiki.log
 ```
 
 ### Why this layout
