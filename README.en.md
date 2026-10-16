@@ -45,7 +45,7 @@ It organizes documents as a tree, gives you Markdown editing with live preview, 
 
 ### Document management
 - Tree-structured documents: `document` folders and `article` pages, nested to any depth
-- Drag to move a node (long press to start), with loop protection
+- Drag to move a node (long press to start), with loop protection; dragging to the top or bottom edge auto-scrolls the list — hold the pointer still and it keeps scrolling, so you can reach nodes outside the visible area (faster the closer you get to the edge)
 - Rename from the right-click context menu
 - Ctrl+Click multi-select for batch operations
 - Unique titles between siblings

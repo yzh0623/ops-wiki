@@ -209,6 +209,77 @@ const WikiEditor = (() => {
   let mermaidReady = false;
   let mermaidTimer = null;
 
+  // 源码 -> 渲染结果 的缓存。重新解析 Markdown 后用它同步回填没改动的图表；
+  // 否则每次输入图表都会先退回代码块，预览随之闪烁、高度抖动、滚动位置被夹紧。
+  // source -> render result. Lets a re-parse restore untouched diagrams synchronously;
+  // otherwise every keystroke drops them back to code blocks, which flashes the pane,
+  // changes its height and clamps its scroll offset.
+  const MERMAID_CACHE = new Map();
+  const MERMAID_CACHE_MAX = 120;
+
+  function newMermaidId() {
+    return 'mmd-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  // mermaid.render 的第三个参数。不传它时 mermaid 会往 document.body 追加一个没有任何
+  // 样式的临时 div；本项目 body 是 flex 列布局，那个 div 就成了 flex item，渲染期间把
+  // 整个页面挤得跳一下。所以这里自带一个脱流的离屏容器，全程复用。
+  // mermaid.render's third argument. Without it mermaid appends an unstyled div to
+  // document.body; body here is a flex column, so that div becomes a flex item and
+  // squeezes the whole page for the duration of every render.
+  let mermaidHost = null;
+
+  function getMermaidHost() {
+    if (!mermaidHost || !mermaidHost.isConnected) {
+      mermaidHost = document.createElement('div');
+      mermaidHost.setAttribute('aria-hidden', 'true');
+      mermaidHost.style.cssText = 'position:absolute;left:-10000px;top:0;height:1px;overflow:hidden;pointer-events:none;';
+      document.body.appendChild(mermaidHost);
+    }
+    // 容器宽度会影响 htmlLabels 的换行，按预览宽度给一个接近真实的值
+    // The container width drives htmlLabels wrapping; match the preview width
+    mermaidHost.style.width = Math.max(320, HTML_PREVIEW.clientWidth || 800) + 'px';
+    return mermaidHost;
+  }
+
+  // 用缓存结果造出替换节点。缓存里的内联 id 换成新的，
+  // 因为 mermaid 把样式写成了 #id 选择器，同页出现两条一样的图会撞 id。
+  // Build the replacement node from a cached result, re-scoping the id: mermaid scopes
+  // its CSS with #id selectors, so two identical diagrams would otherwise collide.
+  function mermaidNodeFromCache(hit) {
+    if (hit.svg === null) {
+      const err = document.createElement('pre');
+      err.className = 'mermaid-error';
+      err.textContent = I18n.t('editor.mermaidFailed') + '\n' + hit.src;
+      return err;
+    }
+    const box = document.createElement('div');
+    box.className = 'mermaid-block';
+    box.innerHTML = hit.svg.split(hit.id).join(newMermaidId());
+    return box;
+  }
+
+  function rememberMermaidResult(src, result) {
+    if (MERMAID_CACHE.size >= MERMAID_CACHE_MAX) {
+      // 简单的先进先出，避免长时间编辑把缓存撑大
+      // Plain FIFO so a long editing session cannot grow the cache without bound
+      MERMAID_CACHE.delete(MERMAID_CACHE.keys().next().value);
+    }
+    MERMAID_CACHE.set(src, result);
+  }
+
+  // 把 root 里命中缓存的图表块就地换成渲染结果，全程同步，不出现占位闪烁
+  // Synchronously swap in cached results so a re-parse never flashes placeholders
+  function restoreMermaidFromCache(root) {
+    if (!root) return;
+    root.querySelectorAll('pre > code.language-mermaid').forEach((codeEl) => {
+      const pre = codeEl.parentElement;
+      if (!pre) return;
+      const hit = MERMAID_CACHE.get(codeEl.textContent);
+      if (hit) pre.replaceWith(mermaidNodeFromCache(hit));
+    });
+  }
+
   function scheduleMermaid() {
     if (typeof mermaid === 'undefined') return;
     if (mermaidTimer) clearTimeout(mermaidTimer);
@@ -217,9 +288,20 @@ const WikiEditor = (() => {
     mermaidTimer = setTimeout(() => renderMermaidNow(HTML_PREVIEW), 180);
   }
 
-  function renderMermaidNow(root) {
+  // 把代码块换成渲染结果（占位块可能已经因为重新解析而脱离文档）
+  // Swap a placeholder for its render result; the placeholder may already be detached
+  function swapMermaidBlock(pre, node) {
+    if (!pre.parentNode) return;
+    withScrollSyncHeld(() => pre.replaceWith(node));
+  }
+
+  // 串行渲染：共用同一个离屏容器，同一时刻只有一张图在渲染，彼此不会互相干扰；
+  // 文档里图表多时也不会一次性打满 CPU。
+  // Render one diagram at a time through a shared off-screen host, so concurrent
+  // renders cannot interfere with each other and many diagrams do not spike the CPU.
+  async function renderMermaidNow(root) {
     if (typeof mermaid === 'undefined' || !root) return;
-    const blocks = root.querySelectorAll('pre > code.language-mermaid');
+    const blocks = Array.from(root.querySelectorAll('pre > code.language-mermaid'));
     if (!blocks.length) return;
     if (!mermaidReady) {
       try {
@@ -232,38 +314,75 @@ const WikiEditor = (() => {
       } catch (e) { /* 忽略初始化错误 */ }
       mermaidReady = true;
     }
-    blocks.forEach((codeEl) => {
+    const host = getMermaidHost();
+    for (const codeEl of blocks) {
       const pre = codeEl.parentElement;
-      if (!pre || pre.dataset.mermaidDone) return;
-      pre.dataset.mermaidDone = '1';
+      // 命中缓存、已被同步回填的块此时已脱离文档
+      // Blocks already restored from cache are detached by now
+      if (!pre || !pre.isConnected) continue;
       const src = codeEl.textContent;
-      const id = 'mmd-' + Math.random().toString(36).slice(2, 10);
-      mermaid.render(id, src).then(({ svg }) => {
-        const host = document.createElement('div');
-        host.className = 'mermaid-block';
-        host.innerHTML = svg;
-        if (pre.parentNode) pre.replaceWith(host);
-      }).catch(() => {
+      const id = newMermaidId();
+      host.replaceChildren();
+      try {
+        const { svg } = await mermaid.render(id, src, host);
+        rememberMermaidResult(src, { id, svg });
+        const box = document.createElement('div');
+        box.className = 'mermaid-block';
+        box.innerHTML = svg;
+        swapMermaidBlock(pre, box);
+      } catch (_) {
+        // 坏图的结果也缓存，避免每次输入都重复解析同一份语法错误
+        // Cache failures too, so a broken diagram is not re-parsed on every keystroke
+        rememberMermaidResult(src, { id: null, svg: null, src });
         const err = document.createElement('pre');
         err.className = 'mermaid-error';
         err.textContent = I18n.t('editor.mermaidFailed') + '\n' + src;
-        if (pre.parentNode) pre.replaceWith(err);
-      });
+        swapMermaidBlock(pre, err);
+      }
+    }
+  }
+
+  // 重绘预览：命中缓存的图表同步回填，滚动同步期间挂起（见 withScrollSyncHeld）
+  // Repaint the pane: cached diagrams are restored synchronously, with the scroll sync
+  // held for the duration (see withScrollSyncHeld)
+  function paintPreview(html) {
+    withScrollSyncHeld(() => {
+      HTML_PREVIEW.innerHTML = html;
+      restoreMermaidFromCache(HTML_PREVIEW);
     });
   }
 
   function syncHtmlPreview() {
     const md = MARKDOWN_EDITOR.value || '';
-    HTML_PREVIEW.innerHTML = markdownToHtml(md);
+    paintPreview(markdownToHtml(md));
     scheduleMermaid();
   }
 
   // ─── Bidirectional Scroll Sync ───
 
   let isScrollSyncing = false;  // 防止循环触发 / guards against feedback loops
+  let scrollSyncHold = false;   // 内容重绘期间挂起同步 / suspends sync while content is rebuilt
+
+  // 预览内容被整体替换、或被图表渲染结果替换时，内容高度会变、scrollTop 会被浏览器夹紧；
+  // 夹紧产生的 scroll 事件会被 syncScrollFromHtml 按新比例同步给编辑区，表现就是
+  // 「每输入一个字编辑区跳一下」。所以重绘期间挂起同步，并在同一帧内把滚动位置恢复回去。
+  // Any wholesale replacement of the pane's content changes its height and clamps
+  // scrollTop; the resulting scroll event would be synced onto the editor by ratio,
+  // which is the "editor jumps on every keystroke" symptom. Hold the sync across the
+  // mutation and put the offset back within the same frame.
+  function withScrollSyncHeld(mutate) {
+    const keepTop = HTML_PREVIEW.scrollTop;
+    scrollSyncHold = true;
+    try {
+      mutate();
+    } finally {
+      HTML_PREVIEW.scrollTop = keepTop;
+      requestAnimationFrame(() => { scrollSyncHold = false; });
+    }
+  }
 
   function syncScrollFromMarkdown() {
-    if (isScrollSyncing) return;
+    if (isScrollSyncing || scrollSyncHold) return;
     isScrollSyncing = true;
 
     const md = MARKDOWN_EDITOR;
@@ -286,7 +405,7 @@ const WikiEditor = (() => {
   }
 
   function syncScrollFromHtml() {
-    if (isScrollSyncing) return;
+    if (isScrollSyncing || scrollSyncHold) return;
     isScrollSyncing = true;
 
     const md = MARKDOWN_EDITOR;
@@ -1105,7 +1224,7 @@ const WikiEditor = (() => {
     if (!keyword) {
       hlMatchCount = 0;
       hlMatchIndex = 0;
-      HTML_PREVIEW.innerHTML = baseHtml;
+      paintPreview(baseHtml);
       scheduleMermaid();
       updateHlNav();
       return;
@@ -1116,7 +1235,7 @@ const WikiEditor = (() => {
     hlMatchCount = matches ? matches.length : 0;
     if (resetIndex) hlMatchIndex = 0;
     if (hlMatchIndex >= hlMatchCount) hlMatchIndex = 0;
-    HTML_PREVIEW.innerHTML = baseHtml.replace(regex, '<mark>$1</mark>');
+    paintPreview(baseHtml.replace(regex, '<mark>$1</mark>'));
     scheduleMermaid();
     updateHlNav();
     if (scroll) scrollToCurrentMatch();

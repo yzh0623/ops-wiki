@@ -247,6 +247,8 @@ const Tree = (() => {
 
     document.body.style.cursor = 'grabbing';
     document.body.style.userSelect = 'none';
+
+    startDragAutoScroll();
   }
 
   // 更新拖拽位置和目标
@@ -254,38 +256,54 @@ const Tree = (() => {
   function updateDrag(e) {
     if (!dragState) return;
 
-    const { ghostEl, offsetX, offsetY, nodeId } = dragState;
+    // 自动滚动循环读的是这两个变量，必须在这里跟着指针更新
+    // The auto-scroll loop reads these, so they must track the pointer here too
+    dragCurrentX = e.clientX;
+    dragCurrentY = e.clientY;
+
+    const { ghostEl, offsetX, offsetY } = dragState;
 
     // 更新 ghost 位置
     // Move the ghost
     ghostEl.style.left = (e.clientX - offsetX) + 'px';
     ghostEl.style.top = (e.clientY - offsetY) + 'px';
 
+    refreshDropTarget(e.clientX, e.clientY);
+  }
+
+  // 重新计算指针下方的放置目标并更新高亮
+  // Recompute the drop target under the pointer and refresh the highlight
+  function refreshDropTarget(mouseX, mouseY) {
+    if (!dragState) return;
+
     // 查找最近的合法放置目标
     // Find the nearest valid drop target
-    const target = findDropTarget(e.clientX, e.clientY, nodeId);
+    const target = findDropTarget(mouseX, mouseY, dragState.nodeId);
+    const targetId = target ? target.id : null;
+
+    // 目标没变就不碰 DOM：自动滚动时这里每帧都会被调用
+    // Skip DOM work when the target is unchanged; auto-scroll calls this every frame
+    if (targetId === dragState.dropTargetId) return;
 
     // 清除之前的放置目标高亮
-    // Clear the previous drop-target highlight
+    // Clear the drop-target highlight
     clearDropTargets();
+    dragState.dropTargetId = targetId;
 
-    if (target) {
-      const targetEl = TREE_CONTAINER.querySelector(`.tree-item[data-id="${target.id}"] > .tree-item-content`);
-      if (targetEl) {
-        targetEl.classList.add('drop-target');
-        // 展开目标节点（如果有子节点且已折叠）
-        // Expand the target when it has collapsed children
-        const parentLi = targetEl.closest('.tree-item');
-        const childUl = parentLi ? parentLi.querySelector(':scope > .tree-children') : null;
-        if (childUl && !childUl.classList.contains('expanded')) {
-          childUl.classList.add('expanded');
-          const toggle = targetEl.querySelector('.tree-toggle');
-          if (toggle) toggle.classList.add('expanded');
-        }
-      }
-      dragState.dropTargetId = target.id;
-    } else {
-      dragState.dropTargetId = null;
+    if (targetId === null) return;
+
+    const targetEl = TREE_CONTAINER.querySelector(`.tree-item[data-id="${targetId}"] > .tree-item-content`);
+    if (!targetEl) return;
+    targetEl.classList.add('drop-target');
+
+    // 展开目标节点（如果有子节点且已折叠）
+    // Expand the target when it has collapsed children
+    const parentLi = targetEl.closest('.tree-item');
+    const childUl = parentLi ? parentLi.querySelector(':scope > .tree-children') : null;
+    if (childUl && !childUl.classList.contains('expanded')) {
+      childUl.classList.add('expanded');
+      const toggle = targetEl.querySelector('.tree-toggle');
+      if (toggle) toggle.classList.add('expanded');
     }
   }
 
@@ -324,10 +342,70 @@ const Tree = (() => {
     });
   }
 
+  // ─── 拖拽越界自动滚动 / Auto-scroll when dragging past the visible area ───
+
+  const DRAG_SCROLL_EDGE = 56;      // 上下边缘热区高度（px）/ hot-zone height at either edge
+  const DRAG_SCROLL_MAX_STEP = 18;  // 每帧最大滚动距离（px）/ max pixels scrolled per frame
+  let dragScrollRAF = null;
+
+  // 用 rAF 循环而不是靠 mousemove 驱动：指针停在边缘不动时 mousemove 不再触发，
+  // 而「按住不动、等列表自己滚」恰恰是这个功能最主要的用法。
+  // A rAF loop rather than mousemove: holding the pointer still at the edge fires no
+  // further mousemove, and waiting for the list to scroll is the main use case.
+  function dragScrollTick() {
+    dragScrollRAF = null;
+    if (!dragState) return;
+
+    const rect = TREE_CONTAINER.getBoundingClientRect();
+
+    // 指针横向离开侧栏（例如拖到编辑区）就停止滚动，避免树自己乱跑
+    // Stop once the pointer leaves the sidebar horizontally, e.g. over the editor
+    if (dragCurrentX < rect.left - 40 || dragCurrentX > rect.right + 40) {
+      dragScrollRAF = requestAnimationFrame(dragScrollTick);
+      return;
+    }
+
+    // 越深入热区滚得越快
+    // The deeper into the hot zone, the faster it scrolls
+    let delta = 0;
+    if (dragCurrentY < rect.top + DRAG_SCROLL_EDGE) {
+      const depth = Math.min(1, (rect.top + DRAG_SCROLL_EDGE - dragCurrentY) / DRAG_SCROLL_EDGE);
+      delta = -Math.ceil(depth * DRAG_SCROLL_MAX_STEP);
+    } else if (dragCurrentY > rect.bottom - DRAG_SCROLL_EDGE) {
+      const depth = Math.min(1, (dragCurrentY - (rect.bottom - DRAG_SCROLL_EDGE)) / DRAG_SCROLL_EDGE);
+      delta = Math.ceil(depth * DRAG_SCROLL_MAX_STEP);
+    }
+
+    if (delta) {
+      const before = TREE_CONTAINER.scrollTop;
+      TREE_CONTAINER.scrollTop = before + delta;
+      // 列表滚动了，指针下方可能已经换成别的节点
+      // The list moved, so the node under the pointer may have changed
+      if (TREE_CONTAINER.scrollTop !== before) {
+        refreshDropTarget(dragCurrentX, dragCurrentY);
+      }
+    }
+
+    dragScrollRAF = requestAnimationFrame(dragScrollTick);
+  }
+
+  function startDragAutoScroll() {
+    if (dragScrollRAF === null) dragScrollRAF = requestAnimationFrame(dragScrollTick);
+  }
+
+  function stopDragAutoScroll() {
+    if (dragScrollRAF !== null) {
+      cancelAnimationFrame(dragScrollRAF);
+      dragScrollRAF = null;
+    }
+  }
+
   // 结束拖拽
   // Finish dragging
   function endDrag() {
     if (!dragState) return;
+
+    stopDragAutoScroll();
 
     const { nodeId, ghostEl, dropTargetId, sourceEl } = dragState;
 
