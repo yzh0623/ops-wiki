@@ -13,7 +13,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # conda 环境名称和安装位置（改成你自己的）/ conda env name and install prefix (change these)
 CONDA_ENV="wiki"
-CONDA_BASE="/home/yzh/.conda"
+CONDA_BASE="/home/ph/.conda"
 PYTHON_BIN="${CONDA_BASE}/envs/${CONDA_ENV}/bin/python"
 
 # conda 初始化脚本，用于 activate（改成你自己的路径）
@@ -22,7 +22,7 @@ source "/root/miniconda3/etc/profile.d/conda.sh"
 
 # 日志与 PID 文件目录（改成你自己的，需可写）
 # log and PID directory (change it; must be writable)
-LOG_DIR="/home/yzh/Documents/logs/ops-wiki"
+LOG_DIR="/home/ph/Documents/logs/ops-wiki"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/ops-wiki.log"
 PID_FILE="${LOG_DIR}/ops-wiki.pid"

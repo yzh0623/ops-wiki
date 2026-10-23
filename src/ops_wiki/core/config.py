@@ -15,7 +15,7 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 # 个人数据资产根目录（不进 git，避免私人数据上传到第三方代码仓库）
 # Personal asset root (outside git, so private data is never pushed to a remote)
-_ASSET_ROOT = "/home/yzh/Documents/docs/myself/knowledge"
+_ASSET_ROOT = "/home/ph/Documents/docs/myself/knowledge"
 # 数据库目录与文件完整路径（语义检索脚本与 Web 共用同一份）
 # Database directory and full file path, shared by the web app and the scripts
 _DB_DIR = os.path.join(_ASSET_ROOT, 'db', 'ops-wiki')
@@ -28,7 +28,7 @@ os.makedirs(_IMAGES_DIR, exist_ok=True)
 
 
 class Config:
-    SECRET_KEY = "1cc8fbc505ebad423701f0e1eb3ee118afc32efb230fd38eb8dbb6604a55cf"
+    SECRET_KEY = "1cc8fbc505ebad423701f0e1eb3ee118afc32efb230fd38eb8dbb6604a55cf3e"
     # 数据库文件路径（模块级常量同值，供脚本直接引用）
     # Database file path (mirrors the module-level constant for scripts)
     DB_PATH = DB_PATH
@@ -55,7 +55,7 @@ class Config:
     # 本地 embedding 模型目录
     # Local embedding model directory
     EMBED_MODEL_PATH = os.environ.get(
-        'OPS_WIKI_EMBED_MODEL', '/home/yzh/Documents/modelscope/qwen/embedding'
+        'OPS_WIKI_EMBED_MODEL', '/home/ph/Documents/modelscope/qwen/embedding'
     )
     # 推理设备：默认 cpu，显式不启用 GPU
     # Inference device: CPU by default, GPU is deliberately not used
