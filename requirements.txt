@@ -5,7 +5,7 @@ charset-normalizer==3.5.2
 click==8.4.1
 cryptography==48.0.0
 et_xmlfile==2.0.0
-filelock==3.32.3
+filelock==4.2.1
 Flask==3.1.1
 Flask-Login==0.6.3
 Flask-SQLAlchemy==3.1.1
