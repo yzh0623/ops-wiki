@@ -15,14 +15,14 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 # 个人数据资产根目录（不进 git，避免私人数据上传到第三方代码仓库）
 # Personal asset root (outside git, so private data is never pushed to a remote)
-_ASSET_ROOT = "/home/ph/Documents/docs/myself/knowledge"
+_ASSET_ROOT = "/home/ph/Documents/workspaces/python/bak-lite/"
 # 数据库目录与文件完整路径（语义检索脚本与 Web 共用同一份）
 # Database directory and full file path, shared by the web app and the scripts
 _DB_DIR = os.path.join(_ASSET_ROOT, 'db', 'ops-wiki')
 DB_PATH = os.path.join(_DB_DIR, "wiki.sqlite")
 # 上传 / 导入图片的存放目录
 # Directory for uploaded and imported images
-_IMAGES_DIR = os.path.join(_ASSET_ROOT, 'imgs')
+_IMAGES_DIR = os.path.join(_ASSET_ROOT, 'imgs', 'ops-wiki')
 os.makedirs(_DB_DIR, exist_ok=True)
 os.makedirs(_IMAGES_DIR, exist_ok=True)
 
